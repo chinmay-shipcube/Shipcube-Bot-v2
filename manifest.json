@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "ShipCube Bot v2",
+  "version": "2.2.0",
+  "description": "ShipHero helper with a side panel: Bulk Ship (many tabs at once) and Single Orders (pack, box by qty, Complete order, write Completed to the sheet).",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://shipping.shiphero.com/*",
+        "https://app.shiphero.com/dashboard/orders/details/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://shipping.shiphero.com/*",
+        "https://app.shiphero.com/dashboard/orders/details/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ],
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "bg.js"
+  },
+  "host_permissions": [
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png"
+    },
+    "default_title": "ShipCube Bot - open the panel"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "team-settings.json"
+      ],
+      "matches": [
+        "https://shipping.shiphero.com/*",
+        "https://app.shiphero.com/*"
+      ]
+    }
+  ],
+  "permissions": [
+    "alarms",
+    "downloads",
+    "sidePanel",
+    "storage",
+    "tabs"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

@@ -1,0 +1,54 @@
+SHIPCUBE BOT v2.0 - side panel, many tabs at once, Single orders
+=================================================================
+This is a NEW folder. Your old bot (v1.11.4, the folder above) is untouched.
+Use one or the other in Chrome - not both at the same time.
+
+INSTALL
+  1. chrome://extensions -> turn OFF the old "ShipCube Bot" (toggle) - keep it as a backup.
+  2. Load unpacked -> choose this "ShipCube Bot v2" folder.
+  3. Pin the bot icon. Clicking it opens the bot in Chrome's SIDE PANEL (right side, next to any tab).
+  4. Sheet script: open the Bulk Ship sheet > Extensions > Apps Script, paste ALL of
+     "ShipCube Sheet Script.gs.txt" (v6) over the old one, Save,
+     Deploy > Manage deployments > edit (pencil) > Version: New version > Deploy. The link stays the same.
+     Google asks for permission once more (the script can now also write into other sheets, e.g. Kitsch_Ramona).
+  5. Side panel > Settings: the web app link + password are copied from the old bot the first time
+     you open ShipHero (or paste them yourself). "Test connection".
+
+SINGLE ORDERS  (tab "Single orders" in the panel)
+  Settings > Single orders sheet (once):
+    Spreadsheet link  : open Kitsch_Ramona on the Kitsch_Cluster tab, copy the address, paste it.
+    Tab name          : Kitsch_Cluster (or leave empty - the tab in the link is used)
+    Columns (letters) : Order Id = PR, Order Number = PS, Status = PT   (change for each new block)
+    Write in Status   : Completed
+    Box rules         : 3 = 6x6x6 Box / 10 = 10x9x4 Box / * = 12x9x4 Box   (the SOP: 1-3, 4-10, 11+)
+    "Test: read 5 rows" shows what the bot sees.
+  Panel:
+    Rows: From 850 to 900 - or From 850 + "50 rows" (fills To = 899). Empty = every row.
+    ShipHero speed: 1x-8x = how many ShipHero tabs work at the same time (start with 2x-4x).
+    Skip rows already "Completed" (on by default).
+    Dry run: does everything (packs the items, picks the box) but does NOT click Complete order and
+             writes nothing. Do one dry run on 2-3 rows first.
+    > Start / Pause / Stop / Continue / From the start - same as the Tracking Bot.
+  For each row the bot:
+    1. opens the order straight from its Order Id (or searches the Order Number on Single Orders)
+    2. checks the page shows the SAME order number as the sheet
+    3. clicks the top item on the left again and again until everything is in the package
+    4. reads the units in Package 1 and picks the box from the rules
+    5. clicks Complete order (the main part of the button, never the arrow) and waits for ShipHero
+    6. writes "Completed" in the Status column (checks the order is still on that row first)
+  It does NOT write Completed when something is off - the row goes in the yellow "need a look" box:
+    order not found, page shows another order, 2+ packages, box not in the list, ShipHero error or
+    question after Complete order (e.g. a station), no confirmation within 45 s.
+  Pages that hang are reloaded by themselves (twice), then tried again at the end.
+  "5.78E+17" Order Numbers lost their digits in the sheet: the bot uses the Order Id for those, and
+  skips the row if there's no Order Id. Format the Order Number column as Plain text.
+
+BULK SHIP  (tab "Bulk ship" in the panel)
+  1. Generate all / 2. Download all - same as before, but several links at once ("Tabs at once").
+  Each link keeps its own tab: its order statuses (biggest first) run one after another in that tab.
+  Each ShipHero tab still shows its own step-by-step panel.
+
+KEEP WORKING WHILE IT RUNS
+  "Bot tabs in their own window": the bot's tabs open in a separate Chrome window; work in yours.
+  Don't close that window while it runs (minimise is fine). It closes by itself when the run is done.
+  Chrome Settings > Performance > Memory saver: "Always keep these sites active" -> shipping.shiphero.com

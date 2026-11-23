@@ -1,0 +1,410 @@
+/**
+ * ShipCube Bot -> Google Sheet   (v10 - Single Orders: tab list, columns by heading, red Error rows)
+ * Paste this whole file into your sheet: Extensions > Apps Script (replace everything), Save,
+ * then Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone) and copy the link.
+ * Updating an existing deployment: Deploy > Manage deployments > edit > Version: New version > Deploy.
+ *
+ * The bot fills these columns (found by their heading in row 1, any order, extra columns are fine):
+ *   Batch link | Batch ID | Qty | Status | Order number | PDF link
+ *   ("PDF link" is added automatically if it's missing: the Google Drive link of <batch>.pdf,
+ *    the file Label Merger uploads. Turn it on once: ShipCube menu > Turn on PDF links.)
+ *
+ * HOW ROWS ARE MATCHED
+ *   Each row belongs to one ShipHero batch page (the link in "Batch link").
+ *   If a row already has that page's link - pasted by hand or written by the bot - the bot
+ *   fills THAT row. Otherwise it looks for the same Order number. Otherwise it adds a new row.
+ *   Many people can use the sheet at the same time (writes are queued one after another).
+ *
+ * SHIPCUBE MENU (appears in the sheet's menu bar after reloading the sheet)
+ *   ShipCube > Archive & clear   - copies all rows to a new tab named with today's date, then
+ *                                   clears the main tab (headings stay) so you can start fresh.
+ *   ShipCube > Save copy to Drive & clear - same, but into a separate spreadsheet file in your Drive
+ *                                   (you can download that file as Excel any time).
+ */
+
+const SCRIPT_VERSION = 10;  // the bot shows this in Settings > Test connection
+const TOKEN = 'shipcube';   // password - must match "Password" in the bot's Settings > Google Sheet
+const SHEET_NAME = '';      // tab name to write to; leave '' to use the FIRST tab
+
+// heading names the script recognises for each field (lower-case)
+const COLUMNS = {
+  batchLink:   ['batch link', 'link', 'batch url'],
+  batchId:     ['batch id', 'batch number', 'batch no', 'batch no.', 'batch #', 'batch'],
+  qty:         ['qty', 'quantity', 'orders', 'total orders', 'shipments'],
+  status:      ['status', 'order status'],
+  orderNumber: ['order number', 'order no', 'order no.', 'top order id', 'top order', 'order id', 'order #', 'order'],
+  pdfLink:     ['pdf link', 'drive link', 'pdf', 'merged pdf', 'pdf drive link', 'gdrive link', 'drive'],
+};
+
+function mainSheet(tab) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (tab) return ss.getSheetByName(tab);          // second sheet / other tab requested by the bot
+  return SHEET_NAME ? ss.getSheetByName(SHEET_NAME) : ss.getSheets()[0];
+}
+
+// "same ShipHero page": compare the products + customer part of the link
+function pageKey(url) {
+  let s = String(url || '').trim();
+  if (!s) return '';
+  try { s = decodeURIComponent(s); } catch (e) {}
+  const prod = (s.match(/[?&]products=([^&#]*)/) || [])[1] || '';
+  const cust = (s.match(/[?&]customer=([^&#]*)/) || [])[1] || '';
+  if (prod || cust) return 'p:' + prod.replace(/\s+/g, '') + '|c:' + cust;
+  const batch = (s.match(/batch(?:es)?\/(\d{4,})/i) || [])[1];
+  if (batch) return 'b:' + batch;
+  return 'u:' + s.replace(/[#?].*$/, '').replace(/\/+$/, '');
+}
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (data.token !== TOKEN) return reply({ ok: false, error: 'Wrong password (TOKEN)' });
+    if (data.action === 'version') return reply({ ok: true, version: SCRIPT_VERSION });
+    if (data.action === 'soTabs') {          // the tabs of the spreadsheet, for the bot's Tab list
+      const ss = data.ss ? SpreadsheetApp.openByUrl(String(data.ss)) : SpreadsheetApp.getActiveSpreadsheet();
+      const gid = (String(data.ss || '').match(/[#&?]gid=(\d+)/) || [])[1] || '';
+      return reply({ ok: true, version: SCRIPT_VERSION, file: ss.getName(), open: gid, tabs: ss.getSheets().filter(function (x) { return !x.isSheetHidden(); }).map(function (x) { return { name: x.getName(), gid: String(x.getSheetId()) }; }) });
+    }
+    if (data.action === 'soRead' || data.action === 'soWrite') return reply(singleOrders_(data));
+    const sh = mainSheet(data.tab);
+    if (!sh) return reply({ ok: false, error: 'Tab "' + (data.tab || SHEET_NAME) + '" not found' });
+
+    const map = findColumns(sh);
+    if (data.action === 'ping') return reply({ ok: true, version: SCRIPT_VERSION, sheet: sh.getName(), columns: Object.keys(map.cols) });
+    if (data.action === 'queue') return reply({ ok: true, items: queueItems_(sh, map) });
+    if (data.action === 'queue2') return reply({ ok: true, items: downloadItems_(sh, map) });
+    if (data.action !== 'upsert') return reply({ ok: false, error: 'Unknown action' });
+    if (!map.cols.orderNumber && !map.cols.batchLink) return reply({ ok: false, error: 'No "Order number" or "Batch link" column found in row ' + map.headerRow });
+
+    const row = data.row || {};
+    const key = String(row.orderNumber || '').replace(/^#/, '').trim();
+    const pk = pageKey(row.pageLink);
+    const bk = row.batchId ? 'b:' + String(row.batchId) : '';
+    if (!key && !pk) return reply({ ok: false, error: 'Nothing to match the row on (no order number / page link)' });
+
+    const last = sh.getLastRow();
+    const n = last - map.headerRow;
+    let target = 0, how = 'new';
+    if (n > 0) {
+      // 1) a row that already has this page's link (hand-pasted or written earlier)
+      if (map.cols.batchLink && (pk || bk)) {
+        const rng = sh.getRange(map.headerRow + 1, map.cols.batchLink, n, 1);
+        const shown = rng.getDisplayValues(), rich = rng.getRichTextValues();
+        for (let i = n - 1; i >= 0 && !target; i--) {
+          const link = linkOf_(rich[i][0], shown[i][0]) || shown[i][0];
+          const k = pageKey(link);
+          if (k && (k === pk || k === bk)) { target = map.headerRow + 1 + i; how = 'link'; }
+        }
+      }
+      // 2) the same top order number
+      if (!target && key && map.cols.orderNumber) {
+        const keys = sh.getRange(map.headerRow + 1, map.cols.orderNumber, n, 1).getDisplayValues();
+        for (let i = n - 1; i >= 0; i--) {
+          if (String(keys[i][0]).replace(/^#/, '').trim() === key) { target = map.headerRow + 1 + i; how = 'order'; break; }
+        }
+      }
+    }
+    if (!target) target = Math.max(last, map.headerRow) + 1;
+
+    const put = function (f, v, asText) {
+      const col = map.cols[f];
+      if (!col || v === undefined || v === null || v === '') return;
+      const cell = sh.getRange(target, col);
+      if (asText) cell.setNumberFormat('@');
+      cell.setValue(asText ? String(v) : v);
+    };
+    put('orderNumber', key, true);   // long numbers like 577602520225649388 stay exact
+    put('qty', row.qty);
+    put('status', row.status);
+    put('batchId', row.batchId, true);
+    // extra columns (second sheet): { 'Column heading': value }
+    if (row.extra) {
+      const hdr = sh.getRange(map.headerRow, 1, 1, Math.max(sh.getLastColumn(), 1)).getDisplayValues()[0];
+      Object.keys(row.extra).forEach(function (h) {
+        const ci = hdr.findIndex(function (x) { return String(x).trim().toLowerCase() === h.toLowerCase(); });
+        if (ci >= 0) sh.getRange(target, ci + 1).setValue(row.extra[h]);
+      });
+    }
+
+    // Batch link: once the batch exists it shows the batch number and opens the batch;
+    // before that it shows the ShipHero page link (a link you pasted by hand is kept).
+    if (map.cols.batchLink) {
+      const cell = sh.getRange(target, map.cols.batchLink);
+      const hasLink = cell.getDisplayValue() !== '';
+      if (row.batchId && row.batchLink) {
+        cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(String(row.batchId)).setLinkUrl(String(row.batchLink)).build());
+      } else if (!hasLink && row.pageLink) {
+        cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(String(row.pageLink)).setLinkUrl(String(row.pageLink)).build());
+      }
+    }
+    return reply({ ok: true, row: target, matched: how });
+  } catch (err) {
+    return reply({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Rows still to do: a ShipHero batch-page link in "Batch link" (e.g. "490 orders" linked),
+// and no Batch ID / Order number yet.
+function linkOf_(rt, shown) {
+  if (rt) {
+    if (rt.getLinkUrl()) return rt.getLinkUrl();
+    const runs = rt.getRuns ? rt.getRuns() : [];
+    for (let i = 0; i < runs.length; i++) if (runs[i].getLinkUrl()) return runs[i].getLinkUrl();
+  }
+  return /^https?:\/\//.test(String(shown).trim()) ? String(shown).trim() : '';
+}
+function queueItems_(sh, map) {
+  const items = [];
+  const n = sh.getLastRow() - map.headerRow;
+  if (n <= 0 || !map.cols.batchLink) return items;
+  const rng = sh.getRange(map.headerRow + 1, map.cols.batchLink, n, 1);
+  const rich = rng.getRichTextValues(), shown = rng.getDisplayValues();
+  const ids = map.cols.batchId ? sh.getRange(map.headerRow + 1, map.cols.batchId, n, 1).getDisplayValues() : null;
+  const ords = map.cols.orderNumber ? sh.getRange(map.headerRow + 1, map.cols.orderNumber, n, 1).getDisplayValues() : null;
+  for (let i = 0; i < n; i++) {
+    const url = linkOf_(rich[i][0], shown[i][0]);
+    if (!/^https:\/\/([a-z0-9-]+\.)*shiphero\.com\/bulk-ship\//i.test(url)) continue;
+    if ((ids && String(ids[i][0]).trim()) || (ords && String(ords[i][0]).trim())) continue;   // already done
+    items.push({ row: map.headerRow + 1 + i, url: url, label: String(shown[i][0]).trim() });
+  }
+  return items;
+}
+
+// Pass 2 rows: a Batch ID exists (labels were generated) but there is no PDF link yet.
+function downloadItems_(sh, map) {
+  const items = [];
+  const n = sh.getLastRow() - map.headerRow;
+  if (n <= 0 || !map.cols.batchLink || !map.cols.batchId) return items;
+  const rng = sh.getRange(map.headerRow + 1, map.cols.batchLink, n, 1);
+  const rich = rng.getRichTextValues(), shown = rng.getDisplayValues();
+  const ids = sh.getRange(map.headerRow + 1, map.cols.batchId, n, 1).getDisplayValues();
+  const pdf = map.cols.pdfLink ? sh.getRange(map.headerRow + 1, map.cols.pdfLink, n, 1).getDisplayValues() : null;
+  for (let i = 0; i < n; i++) {
+    const id = String(ids[i][0]).trim();
+    if (!id) continue;
+    if (pdf && String(pdf[i][0]).trim()) continue;            // merged PDF already linked
+    const url = linkOf_(rich[i][0], shown[i][0]);
+    if (!/^https:\/\/([a-z0-9-]+\.)*shiphero\.com\//i.test(url)) continue;
+    items.push({ row: map.headerRow + 1 + i, url: url, label: 'Batch ' + id, batchId: id });
+  }
+  return items;
+}
+
+function findColumns(sh) {
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const rows = Math.min(5, Math.max(sh.getLastRow(), 1));
+  const grid = sh.getRange(1, 1, rows, lastCol).getDisplayValues();
+  let best = { headerRow: 1, cols: {} };
+  grid.forEach(function (cells, r) {
+    const cols = {};
+    cells.forEach(function (h, c) {
+      const name = String(h).toLowerCase().replace(/\s+/g, ' ').trim();
+      Object.keys(COLUMNS).forEach(function (f) {
+        if (!cols[f] && COLUMNS[f].indexOf(name) !== -1) cols[f] = c + 1;
+      });
+    });
+    if (Object.keys(cols).length > Object.keys(best.cols).length) best = { headerRow: r + 1, cols: cols };
+  });
+  return best;
+}
+
+function reply(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------------- PDF links: find <batch>.pdf (merged by Label Merger) in Google Drive ----------------
+// Runs every 5 minutes once turned on (ShipCube menu > Turn on PDF links). It only looks at rows
+// that have a Batch ID but no PDF link yet. The file must be visible to the sheet owner's account
+// (e.g. Label Merger uploads into a Drive folder shared with this account).
+function updateDriveLinks() {
+  const sh = mainSheet();
+  const map = findColumns(sh);
+  if (!map.cols.batchId) return 0;
+  if (!map.cols.pdfLink) {   // add the column once
+    const col = sh.getLastColumn() + 1;
+    sh.getRange(map.headerRow, col).setValue('PDF Link');
+    map.cols.pdfLink = col;
+  }
+  const last = sh.getLastRow(), n = last - map.headerRow;
+  if (n <= 0) return 0;
+  const start = Math.max(1, n - 300) ;          // newest 300 rows are plenty
+  const rows = n - start + 1;
+  const ids = sh.getRange(map.headerRow + start, map.cols.batchId, rows, 1).getDisplayValues();
+  const links = sh.getRange(map.headerRow + start, map.cols.pdfLink, rows, 1).getDisplayValues();
+  let found = 0;
+  for (let i = 0; i < rows; i++) {
+    const batch = String(ids[i][0]).replace(/\D/g, '');
+    if (!batch || links[i][0]) continue;
+    const file = findMergedPdf_(batch);
+    if (!file) continue;
+    sh.getRange(map.headerRow + start + i, map.cols.pdfLink)
+      .setRichTextValue(SpreadsheetApp.newRichTextValue().setText(file.getName()).setLinkUrl(file.getUrl()).build());
+    found++;
+  }
+  return found;
+}
+function findMergedPdf_(batch) {
+  let best = null;
+  const ok = new RegExp('^' + batch + '(-merged)?( \\(\\d+\\))?\\.pdf$', 'i');   // 8055279.pdf, 8055279 (2).pdf, old 8055279-merged.pdf
+  const take = function (it) { while (it.hasNext()) { const f = it.next(); if (ok.test(f.getName()) && (!best || f.getLastUpdated() > best.getLastUpdated())) best = f; } };
+  take(DriveApp.getFilesByName(batch + '.pdf'));
+  if (!best) take(DriveApp.searchFiles("title contains '" + batch + "' and trashed = false and mimeType = 'application/pdf'"));
+  return best;
+}
+function turnOnDriveLinks() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'updateDriveLinks') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('updateDriveLinks').timeBased().everyMinutes(5).create();
+  const n = updateDriveLinks();
+  SpreadsheetApp.getUi().alert('PDF links are ON - the sheet checks Google Drive every 5 minutes.' + (n ? '\n' + n + ' link(s) added just now.' : ''));
+}
+function updateDriveLinksNow() {
+  const n = updateDriveLinks();
+  SpreadsheetApp.getUi().alert(n ? n + ' PDF link(s) added.' : 'No new merged PDFs found yet.');
+}
+
+// ---------------- ShipCube menu ----------------
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('ShipCube')
+    .addItem('Turn on PDF links (every 5 min)', 'turnOnDriveLinks')
+    .addItem('Update PDF links now', 'updateDriveLinksNow')
+    .addSeparator()
+    .addItem('Archive & clear (new tab)', 'archiveToTab')
+    .addItem('Save copy to Drive & clear', 'archiveToFile')
+    .addToUi();
+}
+
+function archiveRows_(toFile) {
+  const ui = SpreadsheetApp.getUi();
+  const sh = mainSheet();
+  const map = findColumns(sh);
+  const last = sh.getLastRow(), lastCol = Math.max(sh.getLastColumn(), 1);
+  const n = last - map.headerRow;
+  if (n <= 0) { ui.alert('Nothing to archive - there are no rows under the headings.'); return; }
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm');
+  const ok = ui.alert('Archive ' + n + ' row(s)?', 'They will be copied to ' + (toFile ? 'a new spreadsheet in your Drive' : 'a new tab "Log ' + stamp + '"') +
+    ' and then removed from "' + sh.getName() + '" (the headings stay).', ui.ButtonSet.OK_CANCEL);
+  if (ok !== ui.Button.OK) return;
+  const src = sh.getRange(1, 1, last, lastCol);
+  let dest, where;
+  if (toFile) {
+    const file = SpreadsheetApp.create('ShipCube log ' + stamp);
+    dest = file.getSheets()[0];
+    where = file.getUrl();
+  } else {
+    dest = SpreadsheetApp.getActiveSpreadsheet().insertSheet('Log ' + stamp);
+    where = 'tab "Log ' + stamp + '"';
+  }
+  // copy values + links + number formats exactly
+  const out = dest.getRange(1, 1, last, lastCol);
+  out.setNumberFormats(src.getNumberFormats());
+  out.setRichTextValues(src.getRichTextValues());
+  // clear the main tab under the headings
+  sh.getRange(map.headerRow + 1, 1, n, lastCol).clearContent();
+  ui.alert('Done - ' + n + ' row(s) archived to ' + where + '.' + (toFile ? '\nOpen it from Drive and use File > Download > Microsoft Excel if you need a file.' : ''));
+}
+function archiveToTab() { archiveRows_(false); }
+function archiveToFile() { archiveRows_(true); }
+
+
+// ---------------- SINGLE ORDERS (bot v2): read order numbers, write "Completed" into the Status column ----------------
+// data.ss  = link of the spreadsheet (any sheet this account can edit; empty = this spreadsheet)
+// data.tab = tab name (empty = the tab from the #gid= in the link, else the first tab)
+// data.orderCol / data.idCol / data.statusCol = column LETTERS, e.g. "PS", "PR", "PT"
+function soSheet_(data) {
+  const ss = data.ss ? SpreadsheetApp.openByUrl(String(data.ss)) : SpreadsheetApp.getActiveSpreadsheet();
+  if (data.tab) { const t = ss.getSheetByName(String(data.tab)); if (!t) throw new Error('Tab "' + data.tab + '" not found'); return t; }
+  const gid = (String(data.ss || '').match(/[#&?]gid=(\d+)/) || [])[1];
+  if (gid) { const g = ss.getSheets().filter(function (x) { return String(x.getSheetId()) === gid; })[0]; if (g) return g; }
+  return ss.getSheets()[0];
+}
+function colNum_(letters) {
+  const s = String(letters || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!s) return 0;
+  let n = 0; for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+  return n;
+}
+const SO_RED = '#ff0000';
+function soKey_(v) { return String(v == null ? '' : v).replace(/^#+/, '').replace(/\s+/g, '').toUpperCase(); }
+function colLetter_(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+// no letters given: find the "Order Number" headings (first 5 rows), each with "Status" to its right and
+// "Order Id" to its left; the RIGHTMOST block that has orders in the chosen rows wins
+function soAutoCols_(sh, from, to) {
+  const lastCol = Math.max(sh.getLastColumn(), 1), hr = Math.min(5, Math.max(sh.getLastRow(), 1));
+  const grid = sh.getRange(1, 1, hr, lastCol).getDisplayValues();
+  const H = function (v) { return String(v).toLowerCase().replace(/[_\s]+/g, ' ').trim(); };
+  const blocks = [];
+  grid.forEach(function (row) {
+    row.forEach(function (v, c) {
+      if (!/^order (number|no\.?|#)$/.test(H(v))) return;
+      let st = 0, id = 0;
+      for (let k = c + 1; k <= Math.min(c + 3, row.length - 1) && !st; k++) if (/^(order |shipping )?(status|sts|stat)$/.test(H(row[k]))) st = k + 1;
+      for (let k = c - 1; k >= Math.max(0, c - 2) && !id; k--) if (/^order id$/.test(H(row[k]))) id = k + 1;
+      if (st) blocks.push({ order: c + 1, status: st, id: id });
+    });
+  });
+  if (!blocks.length) return null;
+  blocks.sort(function (a, b) { return b.order - a.order; });
+  const f = Math.max(1, from || 1), t = Math.min(sh.getLastRow(), to || sh.getLastRow());
+  if (t >= f) for (let i = 0; i < blocks.length; i++) {
+    const vals = sh.getRange(f, blocks[i].order, t - f + 1, 1).getDisplayValues();
+    if (vals.some(function (x) { return /\d{5,}/.test(String(x[0])); })) return blocks[i];
+  }
+  return blocks[0];
+}
+function singleOrders_(data) {
+  const sh = soSheet_(data);
+  let oc = colNum_(data.orderCol), sc = colNum_(data.statusCol), ic = colNum_(data.idCol);
+  if (!oc || !sc) {
+    const b = soAutoCols_(sh, parseInt(data.from, 10), parseInt(data.to, 10));
+    if (!b) return { ok: false, error: 'No "Order Number" + "Status" headings found in the first 5 rows of "' + sh.getName() + '"' };
+    oc = b.order; sc = b.status; ic = b.id;
+  }
+  const cols = { order: colLetter_(oc), status: colLetter_(sc), id: ic ? colLetter_(ic) : '' };
+  if (!oc || !sc) return { ok: false, error: 'Order Number column and Status column are needed (letters like PS, PT)' };
+  const last = sh.getLastRow();
+  if (data.action === 'soRead') {
+    const from = Math.max(1, parseInt(data.from, 10) || 1);
+    const to = Math.min(last, parseInt(data.to, 10) || last);
+    if (to < from) return { ok: true, items: [], sheet: sh.getName(), last: last, cols: cols };
+    const n = to - from + 1;
+    const ord = sh.getRange(from, oc, n, 1).getDisplayValues();
+    const st = sh.getRange(from, sc, n, 1).getDisplayValues();
+    const ids = ic ? sh.getRange(from, ic, n, 1).getDisplayValues() : null;
+    const items = [];
+    for (let i = 0; i < n; i++) {
+      const o = String(ord[i][0]).trim();
+      const id = ids ? String(ids[i][0]).trim() : '';
+      if (!o && !id) continue;
+      if (/^order\s*(number|no|id|#)/i.test(o)) continue;               // a heading row
+      if (ids && id && !/^\d{5,}$/.test(id)) continue;                  // "Order Id" heading etc.
+      items.push({ row: from + i, order: o, id: /^\d{5,}$/.test(id) ? id : '', status: String(st[i][0]).trim(), sci: /e\+\d+$/i.test(o) });
+    }
+    return { ok: true, version: SCRIPT_VERSION, items: items, sheet: sh.getName(), last: last, cols: cols, file: sh.getParent().getName() };
+  }
+  // soWrite: [{row, order, value}] - checks the order is still on that row, else finds its new row
+  const writes = data.writes || [];
+  if (!writes.length) return { ok: true, written: 0 };
+  const col = sh.getRange(1, oc, Math.max(last, 1), 1).getDisplayValues();
+  const where = {};
+  for (let i = 0; i < col.length; i++) { const k = soKey_(col[i][0]); if (k && !(k in where)) where[k] = i + 1; }
+  let written = 0; const moved = [], missing = [];
+  writes.forEach(function (w) {
+    let r = parseInt(w.row, 10) || 0;
+    const k = soKey_(w.order);
+    if (k && !/E\+\d+$/.test(k) && (!r || soKey_((col[r - 1] || [''])[0]) !== k)) {
+      if (where[k]) { moved.push(r + '->' + where[k]); r = where[k]; } else { missing.push(w.order); return; }
+    }
+    if (!r) return;
+    const stCell = sh.getRange(r, sc), ordCell = sh.getRange(r, oc);
+    stCell.setValue(w.value);
+    // "Error (…)" -> red Order Number + Status; a later success removes only OUR red (other colours stay)
+    if (/^error\b/i.test(String(w.value))) { stCell.setBackground(SO_RED); ordCell.setBackground(SO_RED); }
+    else [stCell, ordCell].forEach(function (cl) { if (String(cl.getBackground()).toLowerCase() === SO_RED) cl.setBackground(null); });
+    written++;
+  });
+  return { ok: true, written: written, moved: moved, missing: missing };
+}

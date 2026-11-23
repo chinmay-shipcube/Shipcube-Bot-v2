@@ -1,0 +1,12 @@
+# old v1 notes (replaced by README.md)
+HOW TO INSTALL.txt
+TEAM SETUP.txt
+GOOGLE SHEET SETUP.txt
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
+*.zip
+*.crx
+*.pem
+node_modules/

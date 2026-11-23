@@ -1,0 +1,25 @@
+{
+  "configVersion": "2026-11-23 web app link",
+  "webAppUrl": "https://script.google.com/macros/s/AKfycbzSulUZhKJZeji__D5IK7coRMq8EhnZMODicmdGQeel53qWM33lLNlFJkT3wu-Kzxhw/exec",
+  "password": "shipcube",
+  "speed": 4,
+  "bulkSpeed": 2,
+  "ownWindow": true,
+  "sheets": [],
+  "client": "Kitsch",
+  "clients": [
+    {
+      "name": "Kitsch",
+      "match": "kitsch",
+      "rules": [
+        "3 = 6x6x6 Box",
+        "10 = 10x9x4 Box",
+        "* = 12x9x4 Box"
+      ]
+    }
+  ],
+  "completedWord": "Completed",
+  "errorWord": "Error",
+  "skipCompleted": true,
+  "bulkSwitches": {}
+}

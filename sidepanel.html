@@ -1,0 +1,229 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ShipCube Bot</title>
+<style>
+  /* ShipHero look: white panels, ShipHero blue for actions, coral-red brand accent, grey canvas, navy text */
+  :root{--blue:#2D6CDF;--blue2:#1F57C3;--blue-soft:#EAF1FD;--red:#E8473D;--ink:#1F2A44;--mute:#6B7489;--line:#E1E5EC;--soft:#F5F7FA;--canvas:#F2F4F8}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--canvas);color:var(--ink);font:13px "Segoe UI",system-ui,sans-serif;line-height:1.4}
+  .hd{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 12px;background:#fff;color:var(--ink);font-weight:700;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+  .hd img{width:30px;height:30px;border-radius:7px}
+  .hd .ttl{display:flex;flex-direction:column;line-height:1.2;font-size:14px}
+  .hd .ttl small{font-weight:400;color:var(--mute);font-size:11px}
+  .hd .ttl small b{color:var(--red);font-weight:600}
+  .hd .gear{margin-left:auto;cursor:pointer;color:var(--blue);font-weight:600;white-space:nowrap;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  .hd .gear:hover{background:var(--blue-soft);border-color:var(--blue)}
+  .steps{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line)}
+  .steps.hide{display:none}
+  .st{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--soft);color:var(--mute);border:1px solid var(--line)}
+  .st.done{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}
+  .st.wait{background:var(--blue-soft);color:var(--blue);border-color:#C9DAF8;font-weight:600}
+  .st.bad{background:#FDECEB;color:#C0392B;border-color:#F6C4C0}
+  .bd{padding:12px}
+  #main,#settings{background:#fff;margin:10px;border:1px solid var(--line);border-radius:8px}
+  .log{height:230px;overflow:auto;font:12px Consolas,monospace;background:var(--soft);border-radius:6px;padding:8px;margin:8px 0;white-space:pre-wrap;border:1px solid var(--line)}
+  .ok{color:#1E8E5A}.warn{color:#B7791F}.bad{color:#D93025}.muted{color:var(--mute)}
+  button{font:600 12.5px "Segoe UI",sans-serif;border-radius:6px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);line-height:1.2}
+  button:hover{border-color:var(--blue);color:var(--blue)}
+  button.p{background:var(--blue);color:#fff;border-color:var(--blue)}
+  button.p:hover{background:var(--blue2);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  label{display:flex;gap:6px;align-items:center;cursor:pointer;margin:0;font-weight:400}
+  input[type=checkbox]{accent-color:var(--blue);margin:0;width:14px;height:14px}
+  input:not([type=checkbox]),select,textarea{font:12.5px "Segoe UI",sans-serif;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+  input:not([type=checkbox]):focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
+  textarea{width:100%;font-family:Consolas,monospace}
+  .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--soft)}
+  .seg button{border:0;border-radius:0;padding:8px 14px;background:transparent;flex:1;color:var(--mute)}
+  .seg button.on{background:#fff;color:var(--blue);box-shadow:inset 0 -2px 0 var(--blue)}
+  .lbl{font-size:11px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .range input{width:64px;text-align:center;font-weight:600}
+  .file{font-size:11.5px;color:var(--mute);margin-top:6px}
+  .file b{color:var(--ink)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+  .stats div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 4px;text-align:center}
+  .stats b{display:block;font-size:17px;color:var(--ink)}
+  .stats span{font-size:10.5px;color:var(--mute)}
+  .stats .d b{color:#1E8E5A}.stats .f b{color:var(--red)}.stats .n b{color:var(--blue)}
+  .tabs{margin-top:8px;font-size:12px}
+  .tabs div{display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)}
+  .tabs i{font-style:normal;background:var(--blue);color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700}
+  .probs{border:1px solid #F6C4C0;background:#FDF3F2;border-radius:6px;padding:8px;margin-top:8px;font-size:12px;color:#8E2A22}
+  .probs .pl{max-height:150px;overflow:auto;margin-top:6px;font:11.5px Consolas,monospace;white-space:pre;background:#fff;border:1px solid #F6C4C0;border-radius:6px;padding:6px;color:var(--ink)}
+  .alert{margin-top:8px;background:#FFF6E5;border:1px solid #F5D28A;color:#8A5A00;border-radius:6px;padding:6px 8px;font-size:12px;font-weight:600}
+  .set{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--soft);margin-bottom:10px}
+  .set h4{margin:2px 0 8px;color:var(--ink);font-size:13px}
+  .set .f{display:grid;grid-template-columns:118px 1fr;gap:6px;align-items:center;margin:5px 0}
+  .set .f input{width:100%}
+  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .cols input{width:100%;text-align:center;font-weight:600;text-transform:uppercase}
+  .hint{font-size:11.5px;color:var(--mute)}
+  .hint b{color:var(--ink)}
+  a{color:var(--blue)}
+  .hide{display:none!important}
+  .foot{font-size:11px;color:var(--mute);text-align:center;margin-top:6px}
+</style>
+</head><body>
+<div class="hd"><img alt="" src="icon48.png"><div class="ttl">ShipCube Bot<small id="ver">v2 · ShipHero → Google Sheet</small></div>
+  <span class="gear" id="gear">⚙ Settings</span></div>
+<div class="steps" id="steps"><span class="st" data-step="read">1 · Read sheet</span><span class="st" data-step="work">2 · Tabs working</span><span class="st" data-step="write">3 · Writing to sheet</span><span class="st" data-step="done">4 · Done</span></div>
+<div class="steps hide" id="bsteps"><span class="st" data-bstep="read">1 · Read sheet</span><span class="st" data-bstep="gen">2 · Generate labels</span><span class="st" data-bstep="dl">3 · Download PDFs</span><span class="st" data-bstep="done">4 · Done</span></div>
+
+<div class="alert hide" id="updBar" style="margin:10px 10px 0;display:flex;align-items:center;gap:8px;justify-content:space-between"><span id="updTxt"></span><button class="p" id="updBtn" style="padding:4px 10px">Reload now</button></div>
+<div class="bd" id="main">
+  <div class="seg" id="modeSeg"><button data-mode="so">Single orders</button><button data-mode="bulk">Bulk ship</button></div>
+
+  <!-- ================= SINGLE ORDERS ================= -->
+  <div id="soView" style="margin-top:10px">
+    <div class="row" style="justify-content:space-between">
+      <label title="How many ShipHero tabs work on orders at the same time">ShipHero speed
+        <select id="speed" style="font-weight:600"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6">6×</option><option value="8">8×</option><option value="10">10×</option></select></label>
+      <span class="muted" id="rate" style="font-size:12px"></span>
+    </div>
+    <div class="row" style="margin-top:8px;gap:6px"><span class="lbl" style="margin:0;width:64px">Sheet</span>
+      <select id="sheetSel" style="flex:1;min-width:0;font-weight:600" title="Your saved Google Sheets"></select>
+      <button id="sheetAdd" title="Add a Google Sheet link" style="padding:4px 9px">+ Add</button><button id="sheetDel" title="Remove this sheet from the list" style="padding:4px 8px">🗑</button></div>
+    <div id="sheetForm" class="set hide" style="margin:6px 0 0;padding:8px">
+      <div class="f"><span>Link</span><input id="newUrl" placeholder="paste the Google Sheet address"></div>
+      <div class="f"><span>Name</span><input id="newName" placeholder="optional — the file name is used"></div>
+      <div class="row"><button class="p" id="sheetSave">Add sheet</button><button id="sheetCancel">Cancel</button><span class="hint" id="sheetOut"></span></div>
+    </div>
+    <div class="file" id="soFile"></div>
+    <div class="row" style="margin-top:8px;gap:6px"><span class="lbl" style="margin:0;width:64px">Subsheet</span>
+      <select id="tabSel" style="flex:1;min-width:0" title="Which subsheet of the spreadsheet. Default = the subsheet you have open."><option value="">The subsheet in the link</option></select>
+      <button id="tabRef" title="Reload the list of subsheets" style="padding:4px 9px">↻</button></div>
+    <div class="hint" id="colInfo" style="margin-top:3px"></div>
+    <div class="row" style="margin-top:8px;gap:6px"><span class="lbl" style="margin:0;width:64px">Client</span>
+      <select id="cliMain" style="flex:1;min-width:0;font-weight:600" title="Whose orders these are — decides the box rules (⚙ Settings → Clients & box rules)"></select></div>
+    <div class="hint" id="cliInfo" style="margin-top:3px"></div>
+    <div class="lbl" style="margin-top:10px">Sheet rows <span style="text-transform:none;font-weight:400">(row numbers on the left of the sheet)</span></div>
+    <div class="row range" style="margin-top:4px">From <input id="from" inputmode="numeric" placeholder="first"> to <input id="to" inputmode="numeric" placeholder="last">
+      <span class="muted">or</span> <input id="count" inputmode="numeric" placeholder="all" title="How many rows from the From row (e.g. From 850 + 50 rows = rows 850–899)"> <span class="muted">rows</span></div>
+    <div class="hint" id="rangeHint" style="margin-top:3px"></div>
+    <label style="margin-top:8px;font-size:12px" title="Rows whose Status already says Completed are not opened again"><input type="checkbox" id="skipDone"> Skip rows already “Completed”</label>
+    <label style="margin-top:4px;font-size:12px" title="Everything except the final click: items packed + box chosen, Complete order is NOT clicked and nothing is written. Use it to check the first few orders."><input type="checkbox" id="dry"> Dry run (don't click Complete order)</label>
+    <label style="margin-top:4px;font-size:12px" title="The bot's ShipHero tabs open in a separate Chrome window, so you can keep working in yours. Don't close it while the bot runs."><input type="checkbox" id="ownWin"> Bot tabs in their own window</label>
+    <div class="row" style="margin-top:10px">
+      <button class="p" id="soStart">▶ Start</button><button id="soPause">⏸ Pause</button><button id="soStop">■ Stop</button>
+      <button id="soFresh" title="Forget the unfinished run and read the sheet again">↺ From the start</button>
+    </div>
+    <div class="alert hide" id="soAlert"></div>
+    <div class="stats">
+      <div class="d"><b id="sOk">0</b><span>completed</span></div>
+      <div class="f"><b id="sFail">0</b><span>failed</span></div>
+      <div class="n"><b id="sLeft">0</b><span>left</span></div>
+      <div><b id="sWritten">0</b><span>in sheet</span></div>
+    </div>
+    <div class="tabs" id="soTabs"></div>
+    <div class="probs hide" id="soProbs"></div>
+  </div>
+
+  <!-- ================= BULK SHIP ================= -->
+  <div id="bulkView" class="hide" style="margin-top:10px">
+    <div class="row" style="justify-content:space-between">
+      <label title="How many bulk-ship links work at the same time (each order status of one link stays in its own tab)">Tabs at once
+        <select id="bulkSpeed" style="font-weight:600"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6">6×</option><option value="8">8×</option><option value="10">10×</option></select></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="p" id="bGen" title="Every sheet row with a bulk-ship link and no Batch ID: rows, locations, box, biggest status first, Generate, Batch ID to the sheet">▶ 1. Generate all</button>
+      <button class="p" id="bDl" title="Every row with a Batch ID and no PDF link: labels + packing slip into the Label Merger Inbox">▶ 2. Download all</button>
+      <button id="bStop">■ Stop</button>
+    </div>
+    <div class="hint" style="margin-top:6px">Several links run at once; the order statuses of one link run one after another in the same tab. Every tab's steps show in the log below.</div>
+    <div class="lbl" style="margin-top:12px">On each Bulk Ship page</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:4px;font-size:12px">
+      <label title="Run automatically when a Bulk Ship batch page opens"><input type="checkbox" data-pf="shipcubeBot.auto" data-def="1"> Auto-run on the page</label>
+      <label title="Choose the best picking location for every item"><input type="checkbox" data-pf="shipcubeBot.pickloc" data-def="1"> Pick locations</label>
+      <label title="Tick select-all at the end"><input type="checkbox" data-pf="shipcubeBot.selall" data-def="1"> Select all orders</label>
+      <label title="Only select all after an Order status is chosen"><input type="checkbox" data-pf="shipcubeBot.waitstatus" data-def="1"> …after Order status</label>
+      <label title="Count the orders per status, do the biggest first, reopen for the next until none are left"><input type="checkbox" data-pf="shipcubeBot.statusRounds" data-def="1"> Every status (biggest first)</label>
+      <label title="Click Generate labels after select-all when every step is OK"><input type="checkbox" data-pf="shipcubeBot.autogen" data-def="0"> Auto-generate labels</label>
+      <label title="On the Batch screen: labels + packing slip into the Label Merger Inbox"><input type="checkbox" data-pf="shipcubeBot.autodl" data-def="1"> Auto-download PDFs</label>
+      <label title="Close the Batch tab once it's in the sheet (and the PDFs are saved)"><input type="checkbox" data-pf="shipcubeBot.autoclose" data-def="0"> Close tab after batch</label>
+    </div>
+    <label style="margin-top:6px;font-size:12px">Rows per page
+      <select data-pf="shipcubeBot.rows" data-def="auto"><option value="auto">auto (by order count)</option><option value="off">don't change</option><option>25</option><option>50</option><option>75</option><option>100</option><option>250</option><option>500</option><option>1000</option></select></label>
+    <div class="lbl" style="margin-top:12px">The ShipHero tab you're looking at</div>
+    <div class="row" style="margin-top:4px;gap:6px">
+      <button data-cmd="fill">Fill box now</button><button data-cmd="pick">Pick now</button><button data-cmd="rows">Set rows</button><button data-cmd="select">Select now</button>
+      <button data-cmd="copyid">Copy top order</button><button data-cmd="debug" title="Copies page info for Claude">Copy debug info</button>
+      <button data-cmd="settings" title="Box rules, products, locations, team settings (opens on the ShipHero page)">⚙ Box rules &amp; settings</button>
+    </div>
+    <div class="stats">
+      <div><b id="bAt">0</b><span>opened</span></div>
+      <div class="n"><b id="bTotal">0</b><span>links</span></div>
+      <div class="d"><b id="bActive">0</b><span>tabs working</span></div>
+      <div><b id="bMode">—</b><span>pass</span></div>
+    </div>
+    <div class="tabs" id="bTabs"></div>
+  </div>
+
+  <div class="row" style="margin-top:10px;justify-content:space-between"><span class="lbl">Log</span><span class="row"><button id="copyLog" style="padding:2px 8px">Copy</button><button id="clearLog" style="padding:2px 8px">Clear</button></span></div>
+  <div class="log" id="log"></div>
+  <div class="foot">Open ShipHero once in this Chrome (signed in) before you start.</div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="bd hide" id="settings">
+  <div class="row" style="margin-bottom:10px"><button id="backTop">← Back</button><span class="hint">Change what you need, then Save.</span></div>
+  <div class="set">
+    <h4>Google Sheet (Apps Script web app)</h4>
+    <div class="f"><span>Web app link</span><input id="cUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="f"><span>Password</span><input id="cToken" placeholder="shipcube"></div>
+    <div class="row"><button id="testBulk">Test connection</button><span class="hint" id="testBulkOut"></span></div>
+    <details id="howTo" style="margin-top:8px"><summary class="hint" style="cursor:pointer"><b>How to update the script</b> (when the bot says it's old)</summary>
+      <ol class="hint" style="margin:6px 0 0 16px;padding:0;line-height:1.55">
+        <li>Open the Google Sheet whose <b>Extensions › Apps Script</b> made the web app link above (the link starts with the same <i>…/macros/s/…</i>).</li>
+        <li>In the editor: select everything (Ctrl+A), delete, paste the whole <b>ShipCube Sheet Script.gs.txt</b> from the <b>ShipCube Bot v2</b> folder. Click 💾 Save.</li>
+        <li><b>Deploy › Manage deployments</b> › click the ✎ pencil › <b>Version: New version</b> › <b>Deploy</b>. (Saving alone is not enough, and “New deployment” would make a NEW link.)</li>
+        <li>Allow the permissions if Google asks, then click <b>Test connection</b> here — it should say <b>script v10</b>.</li>
+      </ol></details>
+  </div>
+  <div class="set">
+    <h4>Single orders sheet</h4>
+    <div class="hint" style="margin-bottom:6px">Nothing to set up: the bot uses the Google Sheet tab you have <b>open</b> in this window and finds the
+      <b>Order Id / Order Number / Status</b> headings itself (the right-most block that has orders in your rows).</div>
+    <details open><summary class="hint" style="cursor:pointer">Fixed column letters (optional)</summary>
+    <label style="margin:6px 0;font-size:12px"><input type="checkbox" id="soManual"> Use these column letters instead of finding them</label>
+    <div class="cols">
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Id</span><input id="soId" placeholder="PR"></label>
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Number</span><input id="soOrd" placeholder="PS"></label>
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Status</span><input id="soSt" placeholder="PT"></label>
+    </div>
+    </details>
+    <div class="f" style="margin-top:8px"><span>Write in Status</span><input id="soVal" placeholder="Completed"></div>
+    <div class="f"><span>…when it fails</span><input id="soErr" placeholder="Error"></div>
+
+    <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Different web app for this sheet (optional)</summary>
+      <div class="f"><span>Web app link</span><input id="soUrl" placeholder="empty = the link above"></div>
+      <div class="f"><span>Password</span><input id="soToken" placeholder="empty = the password above"></div>
+    </details>
+    <div class="row" style="margin-top:8px"><button id="testSo">Test: read 5 rows</button></div>
+    <div class="hint" id="testSoOut" style="white-space:pre-wrap;margin-top:4px"></div>
+  </div>
+  <div class="set">
+    <h4>Clients &amp; box rules (Single orders)</h4>
+    <div class="row" style="gap:6px"><select id="cliSel" style="flex:1;min-width:0"></select><button id="cliAdd">+ Add client</button><button id="cliDel" title="Delete this client">🗑</button></div>
+    <div class="f" style="margin-top:8px"><span>Client name</span><input id="cliName" placeholder="e.g. Kitsch"></div>
+    <div class="f"><span>Must show on order</span><input id="cliMatch" placeholder="e.g. kitsch"></div>
+    <div class="hint">The order page (status badge / shipping method next to the order number) must contain this word, otherwise the bot does not complete the order and writes “Error”. Empty = no check.</div>
+    <div class="lbl" style="margin:8px 0 4px">Box rules (total units = box)</div>
+    <textarea id="soRules" rows="4"></textarea>
+    <div class="hint">One per line: <b>3 = 6x6x6 Box</b> means up to 3 units. <b>* = …</b> is everything above.</div>
+  </div>
+  <div class="set">
+    <h4>Team &amp; updates (git)</h4>
+    <div class="hint" id="teamInfo"></div>
+    <div class="row" style="margin-top:6px;gap:6px">
+      <button id="teamExport" title="Downloads team-config.json with these settings: put it in the bot folder (repo) and push">⬇ Export team-config.json</button>
+      <button id="teamLoad" title="Load team-config.json from the bot folder again">↻ Load team settings</button>
+      <button id="updCheck">Check for update</button></div>
+    <div class="hint" id="teamOut" style="margin-top:4px"></div>
+    <div class="hint" style="margin-top:6px">Team PCs update with <b>UPDATE.bat</b> (or <code>git pull</code>) in the bot folder — the bot then reloads itself when it isn't running.
+      Shared settings come from <b>team-config.json</b> in the repo. Keep the repo <b>private</b> (it holds the web app link + password).</div>
+  </div>
+  <div class="row"><button class="p" id="saveSet">Save</button><button id="closeSet">Back</button><span class="hint" id="saveOut"></span></div>
+</div>
+<script src="side.js"></script>
+</body></html>

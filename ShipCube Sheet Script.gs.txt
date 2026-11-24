@@ -1,5 +1,5 @@
 /**
- * ShipCube Bot -> Google Sheet   (v10 - Single Orders: tab list, columns by heading, red Error rows)
+ * ShipCube Bot -> Google Sheet   (v11 - Single Orders: tab list, columns by heading, red error rows)
  * Paste this whole file into your sheet: Extensions > Apps Script (replace everything), Save,
  * then Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone) and copy the link.
  * Updating an existing deployment: Deploy > Manage deployments > edit > Version: New version > Deploy.
@@ -22,7 +22,7 @@
  *                                   (you can download that file as Excel any time).
  */
 
-const SCRIPT_VERSION = 10;  // the bot shows this in Settings > Test connection
+const SCRIPT_VERSION = 11;  // the bot shows this in Settings > Test connection
 const TOKEN = 'shipcube';   // password - must match "Password" in the bot's Settings > Google Sheet
 const SHEET_NAME = '';      // tab name to write to; leave '' to use the FIRST tab
 
@@ -402,7 +402,7 @@ function singleOrders_(data) {
     const stCell = sh.getRange(r, sc), ordCell = sh.getRange(r, oc);
     stCell.setValue(w.value);
     // "Error (…)" -> red Order Number + Status; a later success removes only OUR red (other colours stay)
-    if (/^error\b/i.test(String(w.value))) { stCell.setBackground(SO_RED); ordCell.setBackground(SO_RED); }
+    if (w.red || /^error\b/i.test(String(w.value))) { stCell.setBackground(SO_RED); ordCell.setBackground(SO_RED); }
     else [stCell, ordCell].forEach(function (cl) { if (String(cl.getBackground()).toLowerCase() === SO_RED) cl.setBackground(null); });
     written++;
   });

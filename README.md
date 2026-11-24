@@ -47,7 +47,7 @@ Never edit the bot files on a team PC — `git pull` stops if files were changed
 
 ## 4. Google Sheet script
 
-`ShipCube Sheet Script.gs.txt` is the Apps Script behind the web app link (current: **v10**).
+`ShipCube Sheet Script.gs.txt` is the Apps Script behind the web app link (current: **v11**).
 When it changes: open the sheet that owns the web app › Extensions › Apps Script › replace everything with the file › Save ›
 **Deploy › Manage deployments › ✎ › Version: New version › Deploy** (same link).
 ⚙ Settings › **Test connection** shows the script version.

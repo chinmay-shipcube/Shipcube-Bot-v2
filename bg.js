@@ -144,8 +144,8 @@ planAlarm();
 
 // ---------------- settings (shared by the side panel and the background) ----------------
 const DEFAULT_WEB_APP = "https://script.google.com/macros/s/AKfycbzSulUZhKJZeji__D5IK7coRMq8EhnZMODicmdGQeel53qWM33lLNlFJkT3wu-Kzxhw/exec";
-const DEF_RULES = "3 = 6x6x6 Box\n10 = 10x9x4 Box\n* = 12x9x4 Box";
-const DEF_SO = { ss: "", tab: "", idCol: "", orderCol: "", statusCol: "", from: "", to: "", skipDone: true, dry: false, rules: DEF_RULES, value: "Completed", errValue: "Error", url: "", token: "" };
+const DEF_RULES = "3 = 6x6x6 Box\n10 = 10x9x4 Box\n19 = 12x9x4 Box\n* = 13x10x8_BOX";
+const DEF_SO = { ss: "", tab: "", idCol: "", orderCol: "", statusCol: "", from: "", to: "", skipDone: true, dry: false, rules: DEF_RULES, value: "Completed", errValue: "Error", alreadyValue: "Already Fulfilled", url: "", token: "" };
 async function getCfg() {
   const c = (await chrome.storage.local.get("cfg")).cfg || {};
   const out = Object.assign({ url: "", token: "shipcube", speed: 4, bulkSpeed: 2, ownWindow: true }, c, { so: Object.assign({}, DEF_SO, c.so || {}) });
@@ -328,7 +328,7 @@ async function soStart(fresh, openSheet) {
   log(`Sheet “${r.file || ""}${r.file ? " › " : ""}${r.sheet}”: Order Id ${tgt.idCol || "—"} · Order Number ${tgt.orderCol} · Status ${tgt.statusCol}`, "muted");
   let items = r.items || [];
   const total = items.length;
-  if (so.skipDone) items = items.filter((x) => !/^completed?$/i.test(String(x.status).trim()));
+  if (so.skipDone) items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
   const skipped = total - items.length;
   const bad = items.filter((x) => x.sci && !x.id);
   items = items.filter((x) => !(x.sci && !x.id));
@@ -398,8 +398,9 @@ async function soResult(tabId, res) {
     s.durations = (s.durations || []).concat(Date.now() - a.at).slice(-40);
     if (res.ok && res.already) {
       s.ok++; s.already = (s.already || 0) + 1;
-      if (!s.dry) s.writes.push({ row: it.row, order: it.order, value: (res.value || (await getCfg()).so.value || "Completed") });
-      log(`${tag}: already fulfilled in ShipHero (not in Single Orders) → “Completed”`, "ok");
+      const av = (await getCfg()).so.alreadyValue || "Already Fulfilled";
+      if (!s.dry) s.writes.push({ row: it.row, order: it.order, value: av });
+      log(`${tag}: already fulfilled in ShipHero (not in Single Orders) → “${av}”`, "ok");
     } else if (res.ok && res.dry) { s.dryOk++; log(`${tag}: DRY RUN ok — ${res.qty} unit(s) → ${res.box} (Complete not clicked)`, "ok"); }
     else if (res.ok) {
       s.ok++; s.writes.push({ row: it.row, order: it.order, value: (res.value || "Completed") });
@@ -410,7 +411,8 @@ async function soResult(tabId, res) {
       it.tries = 1; s.retry.push(it); log(`${tag}: ${res.msg} — will try again at the end`, "warn");
     } else {
       s.fail++; s.failed.push({ row: it.row, order: it.order, msg: res.msg }); log(`${tag}: ✗ ${res.msg} — not completed in ShipHero, “Error (…)” in the sheet`, "bad");
-      if (!s.dry) { s.writes.push({ row: it.row, order: it.order, value: errText(s.errValue || "Error", res.msg) }); }
+      if (!s.dry) s.writes.push(res.detail ? { row: it.row, order: it.order, value: String(res.detail).slice(0, 200), red: true }   // ShipHero's own details, e.g. "The order is on hold"
+                                           : { row: it.row, order: it.order, value: errText(s.errValue || "Error", res.msg) });
     }
     await setSO(s);
   });
@@ -433,8 +435,8 @@ async function soFlush() {
       const s2 = await getSO(); if (!s2) return;
       if (r.ok) {
         s2.writes = s2.writes.slice(batch.length); s2.written += r.written || 0;
-        const nErr = batch.filter((w) => w.value !== (so.value || "Completed")).length;   // "Error (…)" rows
-        log(`Sheet ✓ ${r.written} row(s) written (${batch.length - nErr} “${so.value || "Completed"}”${nErr ? `, ${nErr} “Error (…)”` : ""})${r.moved && r.moved.length ? ` (moved rows found: ${r.moved.join(", ")})` : ""}`, "ok");
+        const nOk = batch.filter((w) => w.value === (so.value || "Completed")).length, nAl = batch.filter((w) => w.value === (so.alreadyValue || "Already Fulfilled")).length, nErr = batch.length - nOk - nAl;
+        log(`Sheet ✓ ${r.written} row(s) written (${nOk} “${so.value || "Completed"}”${nAl ? `, ${nAl} “${so.alreadyValue || "Already Fulfilled"}”` : ""}${nErr ? `, ${nErr} error${nErr > 1 ? "s" : ""} (red)` : ""})${r.moved && r.moved.length ? ` (moved rows found: ${r.moved.join(", ")})` : ""}`, "ok");
         if (r.missing && r.missing.length) log(`Sheet: order(s) not found in the column any more: ${r.missing.join(", ")}`, "warn");
       } else log(`Sheet ✗ ${r.error} — will retry`, "bad");
       await setSO(s2);
@@ -630,6 +632,7 @@ async function applyTeamConfig(force) {
     if (t.client) so.client = t.client;
     if (t.completedWord) so.value = t.completedWord;
     if (t.errorWord) so.errValue = t.errorWord;
+    if (t.alreadyWord) so.alreadyValue = t.alreadyWord;
     if (typeof t.skipCompleted === "boolean") so.skipDone = t.skipCompleted;
     c.so = so;
     const sets = { cfg: c, teamVer: ver };

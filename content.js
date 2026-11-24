@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.3.0";
+  const VERSION = "2.4.0";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];
@@ -2607,6 +2607,30 @@
       !(el.closest("a") && /bulk-ship/i.test(el.closest("a").getAttribute("href") || "")));
     return hit ? (hit.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80) : "";
   }
+  // ShipHero pop-up like "Order 854475386 is on hold" with Show details + Exit Order:
+  // click Show details, read the text under it, click Exit Order, return the details
+  function detailsModal() {
+    return [...document.querySelectorAll('[role=dialog], [role=alertdialog], .modal, [class*="modal" i], [class*="dialog" i]')]
+      .filter((d) => visible(d) && !d.closest("#shipcube-bot, #shipcube-so"))
+      .find((d) => [...d.querySelectorAll("button, a, [role=button]")].some((b) => /^exit order$/i.test((b.innerText || "").trim())) ||
+                   /\b(show|hide) details\b/i.test(d.innerText || "")) || null;
+  }
+  async function readDetailsModal(d) {
+    const link = [...d.querySelectorAll("a, button, span, div, p, [role=button]")].find((x) => x.childElementCount === 0 && /^show details$/i.test((x.textContent || "").trim()));
+    if (link) {                                   // ONE click (a second one would close the details again)
+      if (typeof link.click === "function") link.click(); else realClick(link);
+      let shown = await waitFor(() => /hide details/i.test(d.innerText || ""), 2500, 150);
+      if (!shown && /show details/i.test(d.innerText || "")) { realClick(link); shown = await waitFor(() => /hide details/i.test(d.innerText || ""), 2500, 150); }
+      await sleep(300);
+    }
+    const lines = (d.innerText || "").split(/\n+/).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const at = lines.findIndex((x) => /^(hide|show) details$/i.test(x));
+    let det = (at >= 0 ? lines.slice(at + 1) : []).filter((x) => !/^(exit order|close|ok|cancel)$/i.test(x)).join(" ").trim();
+    if (!det) det = lines.find((x) => !/^(exit order|close|ok|cancel|show details|hide details)$/i.test(x)) || "ShipHero error";   // the title, e.g. "Order … is on hold"
+    const exit = [...d.querySelectorAll("button, a, [role=button]")].find((b) => /^exit order$/i.test((b.innerText || "").trim()));
+    if (exit) { await sleep(200); exit.click(); }    // leave the order so it isn't kept open
+    return det.slice(0, 200);
+  }
   function completeBtn() {
     return [...document.querySelectorAll("button, [role=button]")].find((b) => !b.closest("#shipcube-bot, #shipcube-so") && visible(b) && /^complete order$/i.test((b.innerText || "").replace(/\s+/g, " ").trim()));
   }
@@ -2650,7 +2674,10 @@
   async function soPack(job) {
     const it = job.item;
     soStage("load", `row ${it.row} · loading order…`);
-    const head = await waitFor(() => [...document.querySelectorAll("h1, h2, h3, div, span")].find((el) => visible(el) && /^order\s*#/i.test(ownText(el))), 25000);
+    const findHead = () => [...document.querySelectorAll("h1, h2, h3, div, span")].find((el) => visible(el) && /^order\s*#/i.test(ownText(el)));
+    const first = await waitFor(() => detailsModal() || findHead(), 25000);
+    if (first && detailsModal()) { const det = await readDetailsModal(detailsModal()); return soDone({ ok: false, detail: det, msg: det }); }
+    const head = first || findHead();
     if (!head) return soDone({ ok: false, search: job.via === "direct", retry: job.via !== "direct", msg: "the order page didn't load" });
     const shown = soKey(ownText(head).replace(/^order/i, ""));
     const urlId = new URLSearchParams(location.search).get("orderId") || "";
@@ -2692,6 +2719,7 @@
     }
     await sleep(400);
 
+    if (detailsModal()) { const det = await readDetailsModal(detailsModal()); return soDone({ ok: false, detail: det, msg: det }); }
     // total units in the package
     const s = soSides();
     const badge = packageBadge(packages()[0]);
@@ -2739,6 +2767,7 @@
       const err = popupText(ERR);
       if (err && err !== errBefore) return "err:" + err;
       if (location.href !== before) return "nav";
+      if (detailsModal()) return "det:";
       const dlg = openDialog(); if (dlg && dlg !== dlgBefore) return "dlg:" + dlg;
       if (!completeBtn()) return "gone";
       const okt = popupText(OKT); if (okt && okt !== okBefore) return "toast";
@@ -2747,6 +2776,7 @@
     if (!out) return soDone({ ok: false, msg: "no confirmation after Complete order (45 s) — check this order" });
     if (/bulk[\s_-]*ship/i.test(out)) return soDone({ ok: false, msg: "bulk ship" });
     if (out.startsWith("err:")) return soDone({ ok: false, msg: "ShipHero: " + out.slice(4) });
+    if (out === "det:") { const det = await readDetailsModal(detailsModal()); return soDone({ ok: false, detail: det, msg: det }); }
     if (out.startsWith("dlg:")) return soDone({ ok: false, msg: "ShipHero asked: " + out.slice(4) });
     return soDone({ ok: true, qty: units, box, value: job.value });
   }

@@ -101,7 +101,7 @@
     <div class="row range" style="margin-top:4px">From <input id="from" inputmode="numeric" placeholder="first"> to <input id="to" inputmode="numeric" placeholder="last">
       <span class="muted">or</span> <input id="count" inputmode="numeric" placeholder="all" title="How many rows from the From row (e.g. From 850 + 50 rows = rows 850–899)"> <span class="muted">rows</span></div>
     <div class="hint" id="rangeHint" style="margin-top:3px"></div>
-    <label style="margin-top:8px;font-size:12px" title="Rows whose Status already says Completed are not opened again"><input type="checkbox" id="skipDone"> Skip rows already “Completed”</label>
+    <label style="margin-top:8px;font-size:12px" title="Rows whose Status already says Completed are not opened again"><input type="checkbox" id="skipDone"> Skip rows already “Completed” / “Already Fulfilled”</label>
     <label style="margin-top:4px;font-size:12px" title="Everything except the final click: items packed + box chosen, Complete order is NOT clicked and nothing is written. Use it to check the first few orders."><input type="checkbox" id="dry"> Dry run (don't click Complete order)</label>
     <label style="margin-top:4px;font-size:12px" title="The bot's ShipHero tabs open in a separate Chrome window, so you can keep working in yours. Don't close it while the bot runs."><input type="checkbox" id="ownWin"> Bot tabs in their own window</label>
     <div class="row" style="margin-top:10px">
@@ -183,7 +183,7 @@
         <li>Open the Google Sheet whose <b>Extensions › Apps Script</b> made the web app link above (the link starts with the same <i>…/macros/s/…</i>).</li>
         <li>In the editor: select everything (Ctrl+A), delete, paste the whole <b>ShipCube Sheet Script.gs.txt</b> from the <b>ShipCube Bot v2</b> folder. Click 💾 Save.</li>
         <li><b>Deploy › Manage deployments</b> › click the ✎ pencil › <b>Version: New version</b> › <b>Deploy</b>. (Saving alone is not enough, and “New deployment” would make a NEW link.)</li>
-        <li>Allow the permissions if Google asks, then click <b>Test connection</b> here — it should say <b>script v10</b>.</li>
+        <li>Allow the permissions if Google asks, then click <b>Test connection</b> here — it should say <b>script v11</b>.</li>
       </ol></details>
   </div>
   <div class="set">
@@ -199,7 +199,9 @@
     </div>
     </details>
     <div class="f" style="margin-top:8px"><span>Write in Status</span><input id="soVal" placeholder="Completed"></div>
+    <div class="f"><span>…already fulfilled</span><input id="soAl" placeholder="Already Fulfilled"></div>
     <div class="f"><span>…when it fails</span><input id="soErr" placeholder="Error"></div>
+    <div class="hint">ShipHero pop-ups with <b>Show details</b> (order on hold, SKU errors…) write ShipHero's own details in Status, in red.</div>
 
     <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Different web app for this sheet (optional)</summary>
       <div class="f"><span>Web app link</span><input id="soUrl" placeholder="empty = the link above"></div>

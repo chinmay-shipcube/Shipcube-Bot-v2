@@ -1,4 +1,4 @@
-const OLD_SCRIPT = 'Your Google <b>Apps Script is an old version</b> (needs v10). Open ⚙ Settings › Google Sheet › <b>How to update</b>.';
+const OLD_SCRIPT = 'Your Google <b>Apps Script is an old version</b> (needs v11). Open ⚙ Settings › Google Sheet › <b>How to update</b>.';
 // ShipCube Bot v2 - side panel (controls; the background does the work)
 const $ = (id) => document.getElementById(id);
 const send = (op, extra) => new Promise((res) => chrome.runtime.sendMessage(Object.assign({ type: "panel", op }, extra || {}), (r) => { void chrome.runtime.lastError; res(r || {}); }));
@@ -117,7 +117,7 @@ function openSettings() {
   $("cUrl").value = cfg.url || ""; $("cToken").value = cfg.token || "";
 
   $("soManual").checked = !!s.manualCols; $("soId").value = s.idCol || ""; $("soOrd").value = s.orderCol || ""; $("soSt").value = s.statusCol || "";
-  $("soVal").value = s.value || "Completed"; $("soErr").value = s.errValue || "Error";
+  $("soVal").value = s.value || "Completed"; $("soErr").value = s.errValue || "Error"; $("soAl").value = s.alreadyValue || "Already Fulfilled";
   $("soUrl").value = s.url || ""; $("soToken").value = s.token || "";
   cliEdit = Math.max(0, clients().findIndex((c) => c.name === cfg.so.client)); cliShow();
   $("saveOut").textContent = ""; $("testSoOut").textContent = ""; $("testBulkOut").textContent = "";
@@ -128,7 +128,7 @@ function readSettings() {
   Object.assign(cfg.so, {
 
     manualCols: $("soManual").checked, idCol: L($("soId").value), orderCol: L($("soOrd").value), statusCol: L($("soSt").value),
-    value: $("soVal").value.trim() || "Completed", errValue: $("soErr").value.trim() || "Error",
+    value: $("soVal").value.trim() || "Completed", errValue: $("soErr").value.trim() || "Error", alreadyValue: $("soAl").value.trim() || "Already Fulfilled",
     url: $("soUrl").value.trim(), token: $("soToken").value.trim(),
   });
 }
@@ -143,7 +143,7 @@ $("gear").onclick = () => ($("settings").classList.contains("hide") ? openSettin
 $("closeSet").onclick = closeSettings;
 // ---------------- clients (each with its own box rules) ----------------
 let cliEdit = 0;
-function clients() { if (!Array.isArray(cfg.so.clients) || !cfg.so.clients.length) cfg.so.clients = [{ name: "Kitsch", match: "kitsch", rules: cfg.so.rules || "3 = 6x6x6 Box\n10 = 10x9x4 Box\n* = 12x9x4 Box" }]; return cfg.so.clients; }
+function clients() { if (!Array.isArray(cfg.so.clients) || !cfg.so.clients.length) cfg.so.clients = [{ name: "Kitsch", match: "kitsch", rules: "3 = 6x6x6 Box\n10 = 10x9x4 Box\n19 = 12x9x4 Box\n* = 13x10x8_BOX" }]; return cfg.so.clients; }
 function cliStore() { const c = clients()[cliEdit]; if (!c) return; c.name = $("cliName").value.trim() || c.name || "Client"; c.match = $("cliMatch").value.trim(); c.rules = $("soRules").value.trim(); }
 function cliShow() {
   const list = clients(); if (cliEdit >= list.length) cliEdit = 0;
@@ -178,7 +178,7 @@ $("saveSet").onclick = async () => {
   if (new Set(names).size !== names.length) { $("saveOut").innerHTML = '<span class="bad">Two clients have the same name</span>'; return; }
   await saveCfg(); cliShow(); $("saveOut").innerHTML = '<span class="ok">Saved ✓</span>';
 };
-$("testBulk").onclick = async () => { readSettings(); await saveCfg(); $("testBulkOut").textContent = "…"; const r = await send("testSheet", { which: "bulk" }); $("testBulkOut").innerHTML = !r.ok ? `<span class="bad">✗ ${esc(r.error)}</span>` : r.version >= 10 ? `<span class="ok">✓ Connected — script v${r.version} (up to date)</span>` : `<span class="bad">Connected, but the script is OLD (${r.version ? "v" + r.version : "before v10"}). Update it — steps below.</span>`; $("howTo").open = !(r.ok && r.version >= 10); };
+$("testBulk").onclick = async () => { readSettings(); await saveCfg(); $("testBulkOut").textContent = "…"; const r = await send("testSheet", { which: "bulk" }); $("testBulkOut").innerHTML = !r.ok ? `<span class="bad">✗ ${esc(r.error)}</span>` : r.version >= 11 ? `<span class="ok">✓ Connected — script v${r.version} (up to date)</span>` : `<span class="bad">Connected, but the script is OLD (${r.version ? "v" + r.version : "before v11"}). Update it — steps below.</span>`; $("howTo").open = !(r.ok && r.version >= 11); };
 $("testSo").onclick = async () => {
   readSettings(); await saveCfg(); $("testSoOut").textContent = "Reading…";
   const r = await send("testSheet", { which: "so", openSheet: (curSheet() || {}).url || "" });
@@ -379,7 +379,7 @@ $("teamExport").onclick = async () => {
     sheets: (cfg.so.sheets || []).map((x) => ({ name: x.name, url: x.url })),
     client: cfg.so.client || "",
     clients: clients().map((c) => ({ name: c.name, match: c.match || "", rules: String(c.rules || "").split(/\n/).filter(Boolean) })),
-    completedWord: cfg.so.value || "Completed", errorWord: cfg.so.errValue || "Error", skipCompleted: cfg.so.skipDone !== false,
+    completedWord: cfg.so.value || "Completed", errorWord: cfg.so.errValue || "Error", alreadyWord: cfg.so.alreadyValue || "Already Fulfilled", skipCompleted: cfg.so.skipDone !== false,
     bulkSwitches: Object.fromEntries(Object.entries(pf).filter(([k]) => !["shipcubeBot.bulkOn", "shipcubeBot.autogen"].includes(k))),
   };
   const a = document.createElement("a");

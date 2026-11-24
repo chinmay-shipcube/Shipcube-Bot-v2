@@ -1,5 +1,5 @@
 {
-  "configVersion": "2026-11-23 web app link",
+  "configVersion": "2026-11-24 kitsch 20+ box",
   "webAppUrl": "https://script.google.com/macros/s/AKfycbzSulUZhKJZeji__D5IK7coRMq8EhnZMODicmdGQeel53qWM33lLNlFJkT3wu-Kzxhw/exec",
   "password": "shipcube",
   "speed": 4,
@@ -14,12 +14,14 @@
       "rules": [
         "3 = 6x6x6 Box",
         "10 = 10x9x4 Box",
-        "* = 12x9x4 Box"
+        "19 = 12x9x4 Box",
+        "* = 13x10x8_BOX"
       ]
     }
   ],
   "completedWord": "Completed",
   "errorWord": "Error",
   "skipCompleted": true,
-  "bulkSwitches": {}
+  "bulkSwitches": {},
+  "alreadyWord": "Already Fulfilled"
 }

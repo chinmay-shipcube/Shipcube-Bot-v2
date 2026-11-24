@@ -88,7 +88,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   sendResponse({ ok: true });
 });
 // v2: the Bulk Ship switches live in the side panel; they are copied into this page's settings
-const PFLAGS = ["shipcubeBot.auto", "shipcubeBot.rows", "shipcubeBot.pickloc", "shipcubeBot.selall", "shipcubeBot.waitstatus",
+const PFLAGS = ["shipcubeBot.bulkOn", "shipcubeBot.auto", "shipcubeBot.rows", "shipcubeBot.pickloc", "shipcubeBot.selall", "shipcubeBot.waitstatus",
   "shipcubeBot.autogen", "shipcubeBot.autoclose", "shipcubeBot.statusRounds", "shipcubeBot.autodl"];
 function applyPflags(f) { if (!f) return; PFLAGS.forEach((k) => { if (f[k] != null) { try { localStorage.setItem(k, String(f[k])); } catch (er) {} } }); }
 try {
@@ -96,7 +96,8 @@ try {
     chrome.storage.local.get("pflags", (r) => {
       const f = (r && r.pflags) || {};
       const seed = {}; let need = false;
-      PFLAGS.forEach((k) => { if (f[k] == null) { const v = localStorage.getItem(k); if (v != null) { seed[k] = v; need = true; } } });
+      PFLAGS.forEach((k) => { if (k === "shipcubeBot.autogen" || k === "shipcubeBot.bulkOn") return; if (f[k] == null) { const v = localStorage.getItem(k); if (v != null) { seed[k] = v; need = true; } } });
+      try { localStorage.setItem("shipcubeBot.autogen", "0"); } catch (er) {}      // only "Generate all" generates labels now
       if (need) chrome.storage.local.set({ pflags: Object.assign({}, seed, f) });
       applyPflags(f);
     });

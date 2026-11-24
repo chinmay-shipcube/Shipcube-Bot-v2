@@ -286,11 +286,18 @@ chrome.storage.onChanged.addListener((ch, area) => {
 });
 // ---------------- Bulk Ship switches (copied into every ShipHero page) ----------------
 let pflags = {};
+function bulkGate() {     // the page switches only matter while Bulk Ship automation is ON
+  const on = pflags["shipcubeBot.bulkOn"] === "1";
+  document.querySelectorAll("#bulkSw input, #bulkSw select").forEach((el) => (el.disabled = !on));
+  $("bulkSw").style.opacity = on ? "1" : ".45";
+  $("bulkOffNote").classList.toggle("hide", on);
+}
 function fillPflags() {
   document.querySelectorAll("[data-pf]").forEach((el) => {
     const v = pflags[el.dataset.pf] != null ? String(pflags[el.dataset.pf]) : el.dataset.def;
     if (el.type === "checkbox") el.checked = v === "1"; else el.value = v;
   });
+  bulkGate();
 }
 document.querySelectorAll("[data-pf]").forEach((el) => (el.onchange = () => {
   pflags[el.dataset.pf] = el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value;
@@ -373,7 +380,7 @@ $("teamExport").onclick = async () => {
     client: cfg.so.client || "",
     clients: clients().map((c) => ({ name: c.name, match: c.match || "", rules: String(c.rules || "").split(/\n/).filter(Boolean) })),
     completedWord: cfg.so.value || "Completed", errorWord: cfg.so.errValue || "Error", skipCompleted: cfg.so.skipDone !== false,
-    bulkSwitches: pf,
+    bulkSwitches: Object.fromEntries(Object.entries(pf).filter(([k]) => !["shipcubeBot.bulkOn", "shipcubeBot.autogen"].includes(k))),
   };
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(t, null, 2) + "\n"], { type: "application/json" }));

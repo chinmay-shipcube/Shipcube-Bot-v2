@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];
@@ -1463,7 +1463,7 @@
           step("sel", n ? "done" : "bad", n ? n + " selected" : "couldn't confirm");
           if (n) await recordSelection(n);
         }
-        if (getFlag(LS_AUTOGEN, false) || await inGenQueue()) await autoGenerate();
+        if (await inGenQueue()) await autoGenerate();          // only "▶ 1. Generate all" clicks Generate labels
         else log("All done ✓ Check the page, then click Generate labels yourself.", "ok");
       } finally { selectPhaseBusy = false; }
     }, 1500);
@@ -1649,7 +1649,7 @@
   function stepState(k) { const el = panel && panel.querySelector(`[data-step="${k}"]`); return el ? el.className.replace("st", "").trim() : ""; }
   async function autoGenerate(attempt = 1) {
     const qGen = await inGenQueue();
-    if (!getFlag(LS_AUTOGEN, false) && !qGen) return;
+    if (!qGen) return;                                      // never outside "▶ 1. Generate all"
     const h = findHeaderCheckbox(), sel = selectedCount(h), shown = countOrders();
     const btn = findGenerateButton();
     const problems = [];
@@ -2058,7 +2058,7 @@
     if (!items.length) { log(mode === "dl" ? "Nothing to download — every row with a Batch ID already has a PDF link." : "No batch links to do in the sheet (rows with a ShipHero link and no Batch ID / Order number).", "warn"); return; }
     log(`${items.length} batch(es) to do: ${items.slice(0, 5).map((x) => x.label || "row " + x.row).join(", ")}${items.length > 5 ? " …" : ""}`, "ok");
     if (mode === "gen") {
-      if (!getFlag(LS_AUTOGEN, false)) { setFlag(LS_AUTOGEN, true); const g = panel.querySelector('[data-a="autogen"]'); if (g) g.checked = true; log("Auto-generate switched ON for pass 1.", "warn"); }
+      if (false) { setFlag(LS_AUTOGEN, true); const g = panel.querySelector('[data-a="autogen"]'); if (g) g.checked = true; log("Auto-generate switched ON for pass 1.", "warn"); }
       if (!loadCompanies().some((c) => c.status)) log("Order status: the bot picks the status with the most orders each round.", "muted");
     } else if (!getFlag(LS_AUTODL, true)) { setFlag(LS_AUTODL, true); const d = panel.querySelector('[data-a="autodl"]'); if (d) d.checked = true; log("Auto-download switched ON for pass 2.", "warn"); }
     showQueue(await qCall({ op: "start", items, mode, conc: mode === "dl" ? (parseInt(localStorage.getItem("shipcubeBot.conc") || "2", 10) || 2) : 1 }));
@@ -2475,6 +2475,11 @@
       window.postMessage({ __shipcube: "rt", id, payload }, "*");
     });
   }
+  // ---- Bulk Ship stays separate: it only works when "Bulk Ship automation" is ON (side panel), or in a queue tab ----
+  const LS_BULKON = "shipcubeBot.bulkOn";
+  let queueMine = false;
+  async function refreshQueueMine() { const q = await qCall({ op: "status" }); queueMine = !!(q && q.ok && q.running && q.mine); return queueMine; }
+  function bulkAllowed() { return queueMine || getFlag(LS_BULKON, false); }
   async function inGenQueue() { const q = await qCall({ op: "status" }); return !!(q && q.ok && q.running && q.mine && q.mode === "gen"); }
   const LS_TABPEND = "shipcubeBot.tabPending";   // sessionStorage = this tab only
   function tabPending() { try { return JSON.parse(sessionStorage.getItem(LS_TABPEND) || "null"); } catch { return null; } }
@@ -2751,6 +2756,7 @@
   function tick() {
     if (soMode) return;                      // a Single Orders tab: the worker above does everything
     if (isDashboard()) { handleDashboard(); return; }
+    if (!bulkAllowed()) { if (panel) panel.style.display = "none"; return; }   // Bulk Ship automation is off on this PC
     const batchId = detectBatchPage();
     if (batchId) { buildPanel(); panel.style.display = ""; handleBatchPage(batchId); return; }
     if (PAGE_MATCH.test(location.pathname) && panel && !running) checkTopOrder(false);
@@ -2787,5 +2793,5 @@
     else if (c === "copyid") { lastCopied = null; checkTopOrder(true); }
   });
   soBoot();
-  tick();
+  refreshQueueMine().then(async (mine) => { tick(); if (!mine) { await sleep(2500); if (await refreshQueueMine()) tick(); } });   // a queue tab can be registered a moment after it opens
 })();

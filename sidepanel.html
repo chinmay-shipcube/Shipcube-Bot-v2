@@ -131,6 +131,12 @@
       <button id="bStop">■ Stop</button>
     </div>
     <div class="hint" style="margin-top:6px">Several links run at once; the order statuses of one link run one after another in the same tab. Every tab's steps show in the log below.</div>
+    <div class="set" style="margin:12px 0 0;padding:8px 10px;background:#fff">
+      <label style="font-weight:600" title="OFF = the bot does nothing on Bulk Ship pages you open yourself. ▶ Generate all / ▶ Download all still work."><input type="checkbox" data-pf="shipcubeBot.bulkOn" data-def="0"> Bulk Ship automation on this PC</label>
+      <div class="hint" id="bulkOffNote" style="margin-top:3px">OFF: Bulk Ship pages you open yourself are left alone. Only ▶ 1. Generate all / ▶ 2. Download all use the bot.</div>
+      <div class="hint" style="margin-top:3px">Generate labels is clicked <b>only</b> by ▶ 1. Generate all — never on a page you opened yourself.</div>
+    </div>
+    <div id="bulkSw">
     <div class="lbl" style="margin-top:12px">On each Bulk Ship page</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:4px;font-size:12px">
       <label title="Run automatically when a Bulk Ship batch page opens"><input type="checkbox" data-pf="shipcubeBot.auto" data-def="1"> Auto-run on the page</label>
@@ -138,12 +144,12 @@
       <label title="Tick select-all at the end"><input type="checkbox" data-pf="shipcubeBot.selall" data-def="1"> Select all orders</label>
       <label title="Only select all after an Order status is chosen"><input type="checkbox" data-pf="shipcubeBot.waitstatus" data-def="1"> …after Order status</label>
       <label title="Count the orders per status, do the biggest first, reopen for the next until none are left"><input type="checkbox" data-pf="shipcubeBot.statusRounds" data-def="1"> Every status (biggest first)</label>
-      <label title="Click Generate labels after select-all when every step is OK"><input type="checkbox" data-pf="shipcubeBot.autogen" data-def="0"> Auto-generate labels</label>
       <label title="On the Batch screen: labels + packing slip into the Label Merger Inbox"><input type="checkbox" data-pf="shipcubeBot.autodl" data-def="1"> Auto-download PDFs</label>
       <label title="Close the Batch tab once it's in the sheet (and the PDFs are saved)"><input type="checkbox" data-pf="shipcubeBot.autoclose" data-def="0"> Close tab after batch</label>
     </div>
     <label style="margin-top:6px;font-size:12px">Rows per page
       <select data-pf="shipcubeBot.rows" data-def="auto"><option value="auto">auto (by order count)</option><option value="off">don't change</option><option>25</option><option>50</option><option>75</option><option>100</option><option>250</option><option>500</option><option>1000</option></select></label>
+    </div>
     <div class="lbl" style="margin-top:12px">The ShipHero tab you're looking at</div>
     <div class="row" style="margin-top:4px;gap:6px">
       <button data-cmd="fill">Fill box now</button><button data-cmd="pick">Pick now</button><button data-cmd="rows">Set rows</button><button data-cmd="select">Select now</button>

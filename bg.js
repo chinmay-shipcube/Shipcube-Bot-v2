@@ -596,7 +596,16 @@ async function checkDiskVersion() {
     if (!busy) { await log(`Update v${m.version} found (you have v${cur}) — reloading the bot…`, "ok"); setTimeout(() => chrome.runtime.reload(), 1500); }
   } catch {}
 }
+const PC_ONLY = ["shipcubeBot.bulkOn", "shipcubeBot.autogen"];   // safety switches: never shared through team-config.json
+// once (v2.3.0): Bulk Ship automation OFF and auto-generate OFF on every PC - the team turns Bulk Ship on themselves
+async function safetyReset() {
+  const l = await chrome.storage.local.get(["pflags", "safety230"]);
+  if (l.safety230) return;
+  const pf = l.pflags || {}; pf["shipcubeBot.bulkOn"] = "0"; pf["shipcubeBot.autogen"] = "0";
+  await chrome.storage.local.set({ pflags: pf, safety230: 1 });
+}
 async function applyTeamConfig(force) {
+  await safetyReset();
   try {
     const r = await fetch(chrome.runtime.getURL("team-config.json") + "?t=" + Date.now(), { cache: "no-store" });
     if (!r.ok) return { ok: false, error: "no team-config.json in the bot folder" };
@@ -626,7 +635,8 @@ async function applyTeamConfig(force) {
     const sets = { cfg: c, teamVer: ver };
     if (t.bulkSwitches && typeof t.bulkSwitches === "object") {
       const pf = (await chrome.storage.local.get("pflags")).pflags || {};
-      sets.pflags = Object.assign(pf, t.bulkSwitches);
+      const shared = Object.assign({}, t.bulkSwitches); PC_ONLY.forEach((k) => delete shared[k]);
+      sets.pflags = Object.assign(pf, shared);
     }
     await chrome.storage.local.set(sets);
     await log(`Team settings “${ver}” loaded from team-config.json ✓`, "ok");

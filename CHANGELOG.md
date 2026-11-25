@@ -4,6 +4,7 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.5.1 | Columns moved out of Settings onto the main view (above Sheet rows): found automatically, or tick “Set them myself”. |
 | 2.5.0 | Completed orders always reach the sheet (no endless wait on Google, pending rows written even after a run). Box chosen patiently (no false “not in box list”, works in small/minimised windows). “##” order-number mismatch fixed; search uses one # (none for 577…). Already-shipped orders opened by Order Id → checked on Single Orders → Already Fulfilled. ↻ Retry failed button. Speed = exactly what the panel shows. No more “not a Kitsch order” check (sheets are already sorted by client). |
 | 2.4.2 | Dry run tick box replaced by a 🧪 Test run button (first 5 orders, no Complete, nothing written). Duplicate Back button in Settings removed. |
 | 2.4.1 | Bulk Ship has its own sheet link (⚙ Settings › Bulk Ship sheet), separate from Single orders; it is also given to the Bulk Ship pages, so new PCs need no in-page setup. |

@@ -15,7 +15,7 @@ function fillMain() {
   $("speed").value = String(cfg.speed || 4);
   $("bulkSpeed").value = String(cfg.bulkSpeed || 2);
   $("from").value = cfg.so.from || ""; $("to").value = cfg.so.to || "";
-  rangeHint(); cliMain();
+  rangeHint(); cliMain(); showCols();
   $("skipDone").checked = cfg.so.skipDone !== false;
 
   $("ownWin").checked = cfg.ownWindow !== false;
@@ -123,7 +123,6 @@ function openSettings() {
   $("cUrl").value = cfg.url || ""; $("cToken").value = cfg.token || "";
   $("bUrl").value = cfg.bulkUrl || ""; $("bToken").value = cfg.bulkToken || "";
 
-  $("soManual").checked = !!s.manualCols; $("soId").value = s.idCol || ""; $("soOrd").value = s.orderCol || ""; $("soSt").value = s.statusCol || "";
   $("soVal").value = s.value || "Completed"; $("soErr").value = s.errValue || "Error"; $("soAl").value = s.alreadyValue || "Already Fulfilled";
   $("soUrl").value = s.url || ""; $("soToken").value = s.token || "";
   cliEdit = Math.max(0, clients().findIndex((c) => c.name === cfg.so.client)); cliShow();
@@ -135,7 +134,6 @@ function readSettings() {
   cfg.bulkUrl = $("bUrl").value.trim(); cfg.bulkToken = $("bToken").value.trim() || "shipcube";
   Object.assign(cfg.so, {
 
-    manualCols: $("soManual").checked, idCol: L($("soId").value), orderCol: L($("soOrd").value), statusCol: L($("soSt").value),
     value: $("soVal").value.trim() || "Completed", errValue: $("soErr").value.trim() || "Error", alreadyValue: $("soAl").value.trim() || "Already Fulfilled",
     url: $("soUrl").value.trim(), token: $("soToken").value.trim(),
   });
@@ -200,6 +198,8 @@ function syncMain() {
   cfg.so.from = $("from").value.replace(/\D/g, ""); cfg.so.to = $("to").value.replace(/\D/g, "");
   cfg.so.skipDone = $("skipDone").checked; cfg.ownWindow = $("ownWin").checked;
   if ($("cliMain").value) cfg.so.client = $("cliMain").value;
+  cfg.so.manualCols = $("soManual").checked;
+  if (cfg.so.manualCols) { cfg.so.idCol = colL($("soId").value); cfg.so.orderCol = colL($("soOrd").value); cfg.so.statusCol = colL($("soSt").value); }
 }
 // ---------------- mode ----------------
 function setMode(m) {
@@ -357,14 +357,34 @@ function detect() {
   clearTimeout(detT);
   detT = setTimeout(async () => {
     if (!curSheet()) return;
-    if (cfg.so.manualCols && cfg.so.orderCol) { $("colInfo").innerHTML = `Columns from Settings: Order Id <b>${cfg.so.idCol || "—"}</b> · Order Number <b>${cfg.so.orderCol}</b> · Status <b>${cfg.so.statusCol}</b>`; return; }
+    showCols();
+    if (cfg.so.manualCols && cfg.so.orderCol && cfg.so.statusCol) { $("colInfo").innerHTML = `Using your columns: Order Id <b>${cfg.so.idCol || "—"}</b> · Order Number <b>${cfg.so.orderCol}</b> · Status <b>${cfg.so.statusCol}</b>`; return; }
     $("colInfo").textContent = "Finding the columns…";
     const r = await send("soDetect", { openSheet: (curSheet() || {}).url || "" });
+    if (r.ok && r.cols && !cfg.so.manualCols) { $("soId").value = r.cols.id || ""; $("soOrd").value = r.cols.order || ""; $("soSt").value = r.cols.status || ""; }
     $("colInfo").innerHTML = r.ok && r.cols
       ? `<span class="ok">✓</span> subsheet <b>${esc(r.sheet)}</b>: Order Id <b>${r.cols.id || "—"}</b> · Order Number <b>${r.cols.order}</b> · Status <b>${r.cols.status}</b>`
       : `<span class="bad">${esc(r.error || "columns not found")}</span>`;
   }, 400);
 }
+// ---------------- Columns (main view): found by headings, or your own letters ----------------
+function showCols() {
+  const man = !!cfg.so.manualCols;
+  $("soManual").checked = man;
+  ["soId", "soOrd", "soSt"].forEach((k) => { $(k).disabled = !man; $(k).style.background = man ? "#fff" : "var(--soft)"; });
+  if (man) { $("soId").value = cfg.so.idCol || ""; $("soOrd").value = cfg.so.orderCol || ""; $("soSt").value = cfg.so.statusCol || ""; }
+}
+const colL = (v) => String(v || "").toUpperCase().replace(/[^A-Z]/g, "");
+$("soManual").onchange = () => {
+  cfg.so.manualCols = $("soManual").checked;
+  if (cfg.so.manualCols) { cfg.so.idCol = colL($("soId").value); cfg.so.orderCol = colL($("soOrd").value); cfg.so.statusCol = colL($("soSt").value); }
+  saveSoon(); showCols(); detect();
+};
+["soId", "soOrd", "soSt"].forEach((k) => ($(k).oninput = () => {
+  $(k).value = colL($(k).value);
+  cfg.so.idCol = colL($("soId").value); cfg.so.orderCol = colL($("soOrd").value); cfg.so.statusCol = colL($("soSt").value);
+  saveSoon(); clearTimeout(detT); detT = setTimeout(detect, 800);
+}));
 $("tabSel").onchange = async () => { cfg.so.pickTab = $("tabSel").value; await saveCfg(); detect(); };
 $("tabRef").onclick = () => loadTabs(true);
 chrome.tabs.onActivated.addListener(() => findOpenSheet());

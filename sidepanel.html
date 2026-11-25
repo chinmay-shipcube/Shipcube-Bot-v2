@@ -97,6 +97,13 @@
     <div class="row" style="margin-top:8px;gap:6px"><span class="lbl" style="margin:0;width:64px">Client</span>
       <select id="cliMain" style="flex:1;min-width:0;font-weight:600" title="Whose orders these are — decides the box rules (⚙ Settings → Clients & box rules)"></select></div>
     <div class="hint" id="cliInfo" style="margin-top:3px"></div>
+    <div class="row" style="margin-top:10px;justify-content:space-between"><span class="lbl">Columns</span>
+      <label style="font-size:12px" title="Off = the bot finds Order Id / Order Number / Status by their headings. On = it uses the letters you type."><input type="checkbox" id="soManual"> Set them myself</label></div>
+    <div class="cols" style="margin-top:4px">
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Id</span><input id="soId" placeholder="auto"></label>
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Number</span><input id="soOrd" placeholder="auto"></label>
+      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Status</span><input id="soSt" placeholder="auto"></label>
+    </div>
     <div class="lbl" style="margin-top:10px">Sheet rows <span style="text-transform:none;font-weight:400">(row numbers on the left of the sheet)</span></div>
     <div class="row range" style="margin-top:4px">From <input id="from" inputmode="numeric" placeholder="first"> to <input id="to" inputmode="numeric" placeholder="last">
       <span class="muted">or</span> <input id="count" inputmode="numeric" placeholder="all" title="How many rows from the From row (e.g. From 850 + 50 rows = rows 850–899)"> <span class="muted">rows</span></div>
@@ -193,14 +200,6 @@
     <h4>Single orders sheet</h4>
     <div class="hint" style="margin-bottom:6px">Nothing to set up: the bot uses the Google Sheet tab you have <b>open</b> in this window and finds the
       <b>Order Id / Order Number / Status</b> headings itself (the right-most block that has orders in your rows).</div>
-    <details open><summary class="hint" style="cursor:pointer">Fixed column letters (optional)</summary>
-    <label style="margin:6px 0;font-size:12px"><input type="checkbox" id="soManual"> Use these column letters instead of finding them</label>
-    <div class="cols">
-      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Id</span><input id="soId" placeholder="PR"></label>
-      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Order Number</span><input id="soOrd" placeholder="PS"></label>
-      <label style="flex-direction:column;align-items:stretch;gap:2px"><span class="hint">Status</span><input id="soSt" placeholder="PT"></label>
-    </div>
-    </details>
     <div class="f" style="margin-top:8px"><span>Write in Status</span><input id="soVal" placeholder="Completed"></div>
     <div class="f"><span>…already fulfilled</span><input id="soAl" placeholder="Already Fulfilled"></div>
     <div class="f"><span>…when it fails</span><input id="soErr" placeholder="Error"></div>

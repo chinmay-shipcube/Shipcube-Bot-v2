@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.4.2";
+  const VERSION = "2.5.0";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];
@@ -2491,7 +2491,14 @@
   //  -> box by total qty -> Complete order -> the background writes "Completed" in the sheet
   // =====================================================================================
   let soMode = false, soSent = false, soChipEl = null;
-  const soKey = (s) => String(s == null ? "" : s).replace(/^#+/, "").replace(/\s+/g, "").toUpperCase();
+  const soKey = (s) => String(s == null ? "" : s).replace(/\s+/g, "").replace(/^#+/, "").toUpperCase();
+  // what to type in ShipHero's search: 577… marketplace numbers have no "#", our own numbers exactly ONE "#"
+  function searchTerm(order) {
+    const raw = String(order || "").trim(), t = raw.replace(/^#+\s*/, "");
+    if (/^577\d+$/.test(t)) return t;
+    if (/^\d+$/.test(t) || /^#/.test(raw)) return "#" + t;
+    return t;                                            // e.g. EXC-13833842-1
+  }
   async function waitFor(fn, ms, every = 250) { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await sleep(every); } return fn() || null; }
   function soChip(text, bad) {
     if (!soChipEl) {
@@ -2543,7 +2550,7 @@
     const findCell = () => [...document.querySelectorAll("a, td, span, div, p")].find((el) => !el.closest("#shipcube-bot, #shipcube-so") && visible(el) &&
       el.childElementCount === 0 && soKey(el.textContent) === want && el.getBoundingClientRect().top > input.getBoundingClientRect().bottom);
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    input.focus(); setter.call(input, it.order);
+    input.focus(); setter.call(input, searchTerm(it.order));
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
     ["keydown", "keypress", "keyup"].forEach((k) => input.dispatchEvent(new KeyboardEvent(k, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true })));
@@ -2670,6 +2677,41 @@
   }
   const sameBox = (a, b) => !!a && !!b && (canonBox(a) === canonBox(b) || (dims(a) && dims(a) === dims(b)));
 
+  // choose the box patiently (up to ~15 s): React value first; else open the list (that loads the boxes) and click the option.
+  // Works in small / minimised windows too (doesn't need the list to be on screen).
+  async function chooseBox(box) {
+    let seen = [];
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const bc = boxControl();
+      if (!bc) { await sleep(600); continue; }
+      if (sameBox(boxShown(bc), box)) return { ok: true };
+      if (bc.inp && bc.inp.tagName === "SELECT") {
+        const o = [...bc.inp.options].find((x) => sameBox(x.text, box));
+        if (o) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(bc.inp, o.value); bc.inp.dispatchEvent(new Event("change", { bubbles: true })); }
+        else seen = [...bc.inp.options].map((x) => x.text);
+      } else if (bc.inp) {
+        const r = selectViaReact(bc.inp, box);
+        if (!r.ok && /has: (.+)\)$/.test(r.msg || "")) seen = RegExp.$1.split(", ").filter(Boolean);
+      }
+      await sleep(400 + attempt * 100);
+      if (sameBox(boxShown(boxControl()), box)) return { ok: true };
+      // open the list: mouse down on the control + ArrowDown (loads the options), then click the right one
+      const b2 = boxControl(); if (!b2) continue;
+      const ctl = b2.ctl || b2.root;
+      ["pointerdown", "mousedown"].forEach((t) => ctl.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0 })));
+      if (b2.inp && b2.inp.tagName !== "SELECT") { try { b2.inp.focus(); } catch {} b2.inp.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", code: "ArrowDown", keyCode: 40, bubbles: true })); }
+      await sleep(500 + attempt * 150);
+      const opts = [...document.querySelectorAll('[role=option], [class*="-option"]')].filter((o) => (o.textContent || "").trim() && !o.closest("#shipcube-so, #shipcube-bot"));
+      if (opts.length) seen = opts.map((o) => (o.textContent || "").trim());
+      const hit = pickOption(opts, box);
+      if (hit) { hit.scrollIntoView({ block: "nearest" }); realClick(hit); await sleep(600); if (sameBox(boxShown(boxControl()), box)) return { ok: true }; }
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await sleep(300);
+    }
+    // only call it "not in the list" when the list really loaded and the box isn't there
+    const notInList = seen.length >= 3 && !seen.some((x) => sameBox(x, box));
+    return { ok: false, notInList, seen };
+  }
   // 2) packing page
   async function soPack(job) {
     const it = job.item;
@@ -2696,8 +2738,11 @@
       const sm = [...document.querySelectorAll("div, span, p, label")].find((el) => visible(el) && /^shipping method$/i.test(ownText(el)));
       if (sm && sm.parentElement) area += " " + sm.parentElement.innerText;
       const tags = [...document.querySelectorAll("span, div")].filter((el) => visible(el) && el.childElementCount === 0 && /^[A-Z0-9_ .\-]{3,30}$/.test((el.textContent || "").trim()) && el.getBoundingClientRect().top < 220).map((el) => el.textContent).join(" ");
-      area += " " + tags;
-      if (!norm(area).includes(norm(job.match))) return soDone({ ok: false, msg: `not a ${job.client} order` });
+      area += " " + tags + " " + (head.parentElement ? head.parentElement.textContent : "");
+      if (!norm(area).includes(norm(job.match))) {      // narrow / minimised window: the badge can be collapsed - look at the whole order page
+        const page = [...document.body.children].filter((el) => !el.matches("#shipcube-so, #shipcube-bot, script, style")).map((el) => el.textContent || "").join(" ");
+        if (!norm(page).includes(norm(job.match))) return soDone({ ok: false, msg: `not a ${job.client} order` });
+      }
     }
     const pk = packages();
     if (pk.length > 1) return soDone({ ok: false, msg: `${pk.length} packages on this order — please do it by hand` });
@@ -2731,32 +2776,17 @@
     const box = soBoxFor(units, job.rules);
     if (!box) return soDone({ ok: false, msg: `no box rule for ${units} unit(s) (⚙ Settings → Single orders)` });
     soStage("box", `row ${it.row} · ${units} unit(s) → ${box}`);
-    let bc = await waitFor(() => boxControl(), 8000);
-    if (!bc) return soDone({ ok: false, msg: "couldn't find the Shipping box dropdown" });
-    if (!sameBox(boxShown(bc), box)) {
-      let res = { ok: false };
-      if (bc.inp && bc.inp.tagName === "SELECT") {
-        const o = [...bc.inp.options].find((x) => sameBox(x.text, box));
-        if (o) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(bc.inp, o.value); bc.inp.dispatchEvent(new Event("change", { bubbles: true })); res = { ok: true }; }
-      } else if (bc.inp) res = selectViaReact(bc.inp, box);
-      if (!res.ok) {                                          // open the list and click the option
-        realClick(bc.ctl || bc.root); await sleep(500);
-        const opts = [...document.querySelectorAll('[role=option], [class*="-option"]')].filter((o) => visible(o));
-        const hit = pickOption(opts, box);
-        if (hit) { realClick(hit); res = { ok: true }; }
-        else { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return soDone({ ok: false, msg: `“${box}” is not in ShipHero's box list` }); }
-      }
-      await sleep(600);
-      bc = boxControl();
-      if (!sameBox(boxShown(bc), box)) await sleep(800);
-      if (!sameBox(boxShown(boxControl()), box)) return soDone({ ok: false, msg: `box shows “${boxShown(boxControl())}” but should be “${box}”` });
-    }
+    const bc0 = await waitFor(() => boxControl(), 10000);
+    if (!bc0) return soDone({ ok: false, retry: true, msg: "couldn't find the Shipping box dropdown" });
+    const pick = await chooseBox(box);                     // (2) patient: ShipHero can load the box list late
+    if (!pick.ok) return soDone({ ok: false, retry: !pick.notInList, msg: pick.notInList ? `“${box}” is not in ShipHero's box list` : `couldn't set the box to “${box}” (page slow)` });
 
     if (job.dry) return soDone({ ok: true, dry: true, qty: units, box });
 
     // Complete order (the main part of the button, never the arrow menu)
     const btn = await waitFor(() => { const b = completeBtn(); return b && !b.disabled && b.getAttribute("aria-disabled") !== "true" ? b : null; }, 8000);
-    if (!btn) return soDone({ ok: false, msg: completeBtn() ? "Complete order is disabled" : "no Complete order button (already shipped?)" });
+    if (!btn) return soDone(completeBtn() ? { ok: false, msg: "Complete order is disabled" }
+      : { ok: false, search: job.via === "direct", msg: "no Complete order button (already shipped?)" });
     soStage("complete", `row ${it.row} · completing…`);
     const before = location.href;
     const ERR = /error|fail|unable|could not|couldn't|invalid|required|select a station/i, OKT = /complet|shipped|success/i;

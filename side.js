@@ -108,11 +108,12 @@ $("count").oninput = () => {
   cfg.so.to = n ? String(f + n - 1) : ""; $("to").value = cfg.so.to; rangeHint(); saveSoon();
 };
 $("skipDone").onchange = () => { cfg.so.skipDone = $("skipDone").checked; saveSoon(); };
+$("soRetry").onclick = async () => { if (so && so.running) return; syncMain(); await saveCfg(); send("soRetry"); };
 $("soTest").onclick = async () => {        // test run: first 5 orders, no Complete order, nothing written
   if (so && so.running) return;
   await findOpenSheet();
   if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
-  await saveCfg(); send("soStart", { fresh: true, test: true, openSheet: curSheet().url });
+  syncMain(); await saveCfg(); send("soStart", { fresh: true, test: true, openSheet: curSheet().url, speed: cfg.speed });
 };
 $("ownWin").onchange = () => { cfg.ownWindow = $("ownWin").checked; saveSoon(); };
 
@@ -151,12 +152,12 @@ $("closeSet").onclick = closeSettings;
 // ---------------- clients (each with its own box rules) ----------------
 let cliEdit = 0;
 function clients() { if (!Array.isArray(cfg.so.clients) || !cfg.so.clients.length) cfg.so.clients = [{ name: "Kitsch", match: "kitsch", rules: "3 = 6x6x6 Box\n10 = 10x9x4 Box\n19 = 12x9x4 Box\n* = 13x10x8_BOX" }]; return cfg.so.clients; }
-function cliStore() { const c = clients()[cliEdit]; if (!c) return; c.name = $("cliName").value.trim() || c.name || "Client"; c.match = $("cliMatch").value.trim(); c.rules = $("soRules").value.trim(); }
+function cliStore() { const c = clients()[cliEdit]; if (!c) return; c.name = $("cliName").value.trim() || c.name || "Client"; c.rules = $("soRules").value.trim(); }
 function cliShow() {
   const list = clients(); if (cliEdit >= list.length) cliEdit = 0;
   $("cliSel").innerHTML = list.map((c, i) => `<option value="${i}">${esc(c.name)}</option>`).join("");
   $("cliSel").value = String(cliEdit);
-  const c = list[cliEdit]; $("cliName").value = c.name || ""; $("cliMatch").value = c.match || ""; $("soRules").value = c.rules || "";
+  const c = list[cliEdit]; $("cliName").value = c.name || ""; $("soRules").value = c.rules || "";
 }
 function cliMain() {
   const list = clients(); const sel = $("cliMain");
@@ -164,7 +165,7 @@ function cliMain() {
   if (!list.some((c) => c.name === cfg.so.client)) cfg.so.client = list[0].name;
   sel.value = cfg.so.client;
   const c = list.find((x) => x.name === cfg.so.client);
-  $("cliInfo").innerHTML = c ? `Boxes: ${esc((c.rules || "").split(/\n/).filter(Boolean).map((l) => l.replace(/\s*=\s*/, " → ").replace(/^\*/, "more")).join(" · "))}${c.match ? ` · order must show “${esc(c.match)}”` : ""}` : "";
+  $("cliInfo").innerHTML = c ? `Boxes: ${esc((c.rules || "").split(/\n/).filter(Boolean).map((l) => l.replace(/\s*=\s*/, " → ").replace(/^\*/, "more")).join(" · "))}` : "";
 }
 $("cliMain").onchange = () => { cfg.so.client = $("cliMain").value; cliMain(); saveSoon(); };
 $("cliSel").onchange = () => { cliStore(); cliEdit = +$("cliSel").value; cliShow(); };
@@ -194,6 +195,12 @@ $("testSo").onclick = async () => {
     : `<span class="bad">✗ ${r.error}${/Unknown action/i.test(r.error || "") ? " — update the Apps Script to v6" : ""}</span>`;
 };
 
+function syncMain() {
+  cfg.speed = +$("speed").value || 4; cfg.bulkSpeed = +$("bulkSpeed").value || 2;
+  cfg.so.from = $("from").value.replace(/\D/g, ""); cfg.so.to = $("to").value.replace(/\D/g, "");
+  cfg.so.skipDone = $("skipDone").checked; cfg.ownWindow = $("ownWin").checked;
+  if ($("cliMain").value) cfg.so.client = $("cliMain").value;
+}
 // ---------------- mode ----------------
 function setMode(m) {
   mode = m; try { localStorage.setItem("scb.mode", m); } catch {}
@@ -208,13 +215,13 @@ $("soStart").onclick = async () => {
   if (so && so.running && so.paused) return send("soResume");
   await findOpenSheet();
   if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
-  await saveCfg(); send("soStart", { fresh: false, openSheet: curSheet().url });
+  syncMain(); await saveCfg(); send("soStart", { fresh: false, openSheet: curSheet().url, speed: cfg.speed });
 };
-$("soFresh").onclick = async () => { if (so && so.running) return; await findOpenSheet(); await saveCfg(); send("soStart", { fresh: true, openSheet: (curSheet() || {}).url || "" }); };
+$("soFresh").onclick = async () => { if (so && so.running) return; await findOpenSheet(); syncMain(); await saveCfg(); send("soStart", { fresh: true, openSheet: (curSheet() || {}).url || "", speed: cfg.speed }); };
 $("soPause").onclick = () => send(so && so.paused ? "soResume" : "soPause");
 $("soStop").onclick = () => send("soStop");
-$("bGen").onclick = async () => { await saveCfg(); send("bulkStart", { mode: "gen" }); };
-$("bDl").onclick = async () => { await saveCfg(); send("bulkStart", { mode: "dl" }); };
+$("bGen").onclick = async () => { syncMain(); await saveCfg(); send("bulkStart", { mode: "gen" }); };
+$("bDl").onclick = async () => { syncMain(); await saveCfg(); send("bulkStart", { mode: "dl" }); };
 $("bStop").onclick = () => send("bulkStop");
 $("clearLog").onclick = () => send("clearLog");
 $("copyLog").onclick = () => navigator.clipboard.writeText(logs.map((l) => `${new Date(l.t).toLocaleTimeString()}  ${l.m}`).join("\n"));
@@ -236,6 +243,8 @@ function renderSO() {
   $("soStart").disabled = running && !s.paused;
   $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
   $("soStop").disabled = !running; $("soFresh").disabled = running; $("soTest").disabled = running;
+  const nf = s && !running ? (s.failed || []).filter((f) => f.item).length : 0;          // ↻ Retry failed after a run
+  $("soRetry").classList.toggle("hide", !nf); $("soRetry").textContent = `↻ Retry failed (${nf})`;
   // speed
   const d = s && s.durations && s.durations.length ? s.durations.reduce((a, b) => a + b, 0) / s.durations.length : 0;
   $("rate").textContent = running && d ? `≈ ${(60000 / d * Math.max(1, active.length)).toFixed(1)} orders/min` : "";
@@ -244,7 +253,8 @@ function renderSO() {
   step("write", s && s.writes && s.writes.length ? "wait" : s && s.written ? "done" : ""); step("done", s && s.finishedAt && !running ? (s.fail ? "bad" : "done") : "");
   // tabs
   $("soTabs").innerHTML = active.map(([, a], i) => `<div><i>${i + 1}</i> row ${a.item.row} · <b>${esc(a.item.order || a.item.id)}</b> <span class="muted">${STAGE[a.stage] || (a.via === "search" ? "searching" : "opening")}</span></div>`).join("")
-    + (s && s.paused ? `<div class="warn">Paused — ${(s.idle || []).length} tab(s) waiting</div>` : "");
+    + (s && s.paused ? `<div class="warn">Paused — ${(s.idle || []).length} tab(s) waiting</div>` : "")
+    + (s && s.writes && s.writes.length ? `<div class="muted">⏳ ${s.writes.length} result(s) waiting to be written to the sheet…</div>` : "");
   // failed list
   const f = s && s.failed || [];
   $("soProbs").classList.toggle("hide", !f.length);

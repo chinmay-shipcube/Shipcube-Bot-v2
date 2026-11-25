@@ -304,12 +304,12 @@ function soTarget(c, openSheet) {
   if (so.manualCols && so.orderCol && so.statusCol) Object.assign(t, { orderCol: so.orderCol, statusCol: so.statusCol, idCol: so.idCol });
   return t;
 }
-async function soStart(fresh, openSheet) {
+async function soStart(fresh, openSheet, test) {
   const c = await getCfg(); const so = c.so;
   const url = so.url || c.url, token = so.token || c.token;
   let s = await getSO();
   if (!fresh && s && s.items && soLeft(s) > 0 && !s.running) {        // ▶ Continue
-    s.running = true; s.paused = false; s.conc = Math.max(1, Math.min(10, +c.speed || 4)); s.dry = !!so.dry;
+    s.running = true; s.paused = false; s.conc = Math.max(1, Math.min(10, +c.speed || 4));
     await setSO(s); log(`Single orders: continuing — ${soLeft(s)} order(s) left`, "ok");
     return soOpenWorkers();
   }
@@ -330,14 +330,15 @@ async function soStart(fresh, openSheet) {
   const total = items.length;
   if (so.skipDone) items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
   const skipped = total - items.length;
+  if (test) items = items.slice(0, 5);          // 🧪 Test run: the first 5 orders only
   const bad = items.filter((x) => x.sci && !x.id);
   items = items.filter((x) => !(x.sci && !x.id));
   if (bad.length) log(`Rows ${bad.map((x) => x.row).join(", ")}: the Order Number shows as 5.78E+17 (lost digits) and there's no Order Id — skipped. Format that column as Plain text.`, "warn");
   if (!items.length) { log(`Nothing to do on "${r.sheet}"${skipped ? ` — ${skipped} row(s) already Completed` : ""}.`, "warn"); return; }
   s = { running: true, paused: false, items, pos: 0, retry: [], active: {}, idle: [], ok: 0, fail: 0, dryOk: 0, failed: [], writes: [], written: 0,
-        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: !!so.dry, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [] };
+        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: !!test, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [] };
   await setSO(s);
-  log(`Single orders: ${items.length} order(s) on "${r.sheet}"${skipped ? `, ${skipped} already Completed skipped` : ""} — ${s.conc} tab${s.conc > 1 ? "s" : ""} at once${s.dry ? " · DRY RUN (Complete is NOT clicked)" : ""}`, "ok");
+  log(`Single orders: ${items.length} order(s) on "${r.sheet}"${skipped ? `, ${skipped} already Completed skipped` : ""} — ${s.conc} tab${s.conc > 1 ? "s" : ""} at once${s.dry ? " · 🧪 TEST RUN (Complete order is NOT clicked, nothing written)" : ""}`, "ok");
   return soOpenWorkers();
 }
 async function soOpenWorkers() {
@@ -401,7 +402,7 @@ async function soResult(tabId, res) {
       const av = (await getCfg()).so.alreadyValue || "Already Fulfilled";
       if (!s.dry) s.writes.push({ row: it.row, order: it.order, value: av });
       log(`${tag}: already fulfilled in ShipHero (not in Single Orders) → “${av}”`, "ok");
-    } else if (res.ok && res.dry) { s.dryOk++; log(`${tag}: DRY RUN ok — ${res.qty} unit(s) → ${res.box} (Complete not clicked)`, "ok"); }
+    } else if (res.ok && res.dry) { s.dryOk++; log(`${tag}: 🧪 test ok — ${res.qty} unit(s) → ${res.box} (Complete not clicked)`, "ok"); }
     else if (res.ok) {
       s.ok++; s.writes.push({ row: it.row, order: it.order, value: (res.value || "Completed") });
       log(`${tag}: completed ✓ — ${res.qty} unit(s) → ${res.box}`, "ok"); wroteNow = s.writes.length >= 15;
@@ -410,7 +411,7 @@ async function soResult(tabId, res) {
     } else if (res.retry && !it.tries) {
       it.tries = 1; s.retry.push(it); log(`${tag}: ${res.msg} — will try again at the end`, "warn");
     } else {
-      s.fail++; s.failed.push({ row: it.row, order: it.order, msg: res.msg }); log(`${tag}: ✗ ${res.msg} — not completed in ShipHero, “Error (…)” in the sheet`, "bad");
+      s.fail++; s.failed.push({ row: it.row, order: it.order, msg: res.msg }); log(`${tag}: ✗ ${res.msg}${s.dry ? " (test run — nothing written)" : " — not completed in ShipHero, written in the sheet (red)"}`, "bad");
       if (!s.dry) s.writes.push(res.detail ? { row: it.row, order: it.order, value: String(res.detail).slice(0, 200), red: true }   // ShipHero's own details, e.g. "The order is on hold"
                                            : { row: it.row, order: it.order, value: errText(s.errValue || "Error", res.msg) });
     }
@@ -451,7 +452,7 @@ async function soCheckFinish() {
   if (s.writes.length) return soFlush();
   s.running = false; s.finishedAt = Date.now(); await setSO(s);
   const mins = ((s.finishedAt - s.startedAt) / 60000).toFixed(1);
-  log(`Single orders finished ✓ ${s.ok} completed${s.already ? ` (${s.already} already fulfilled)` : ""}${s.dryOk ? `, ${s.dryOk} dry-run` : ""}, ${s.fail} failed · ${mins} min`, s.fail ? "warn" : "ok");
+  log(`Single orders finished ✓ ${s.ok} completed${s.already ? ` (${s.already} already fulfilled)` : ""}${s.dryOk ? `, ${s.dryOk} test ok` : ""}, ${s.fail} failed · ${mins} min`, s.fail ? "warn" : "ok");
   if (s.failed.length) log(`Failed rows: ${s.failed.map((f) => f.row).join(", ")}`, "bad");
   for (const id of s.idle || []) chrome.tabs.remove(id).catch(() => {});
   setTimeout(closeBotWindowIfEmpty, 3000);
@@ -518,6 +519,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const c = await getCfg(); const so = c.so;
       const r = msg.which === "so"
         ? await sheetPost(so.url || c.url, so.token || c.token, Object.assign({ action: "soRead", from: so.from || 1, to: so.from ? (+so.from + 4) : 5 }, soTarget(c, msg.openSheet)))
+        : msg.which === "bulkSheet" ? await sheetPost(c.bulkUrl, c.bulkToken || "shipcube", { action: "ping" })
         : await sheetPost(c.url, c.token, { action: "ping" });
       sendResponse(r); return;
     }
@@ -529,7 +531,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         : Object.assign({ action: "soRead", from, to: Math.min(to, from + 200) }, t)));
       return;
     }
-    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh, msg.openSheet || ""); return; }
+    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh || !!msg.test, msg.openSheet || "", !!msg.test); return; }
     if (op === "soPause") { await locked(async () => { const s = await getSO(); if (s) { s.paused = true; await setSO(s); } }); log("⏸ Paused — tabs finish the order they're on, then wait.", "warn"); sendResponse({ ok: true }); return; }
     if (op === "soResume") { await locked(async () => { const s = await getSO(); if (s) { s.paused = false; await setSO(s); } }); log("▶ Resumed", "ok"); sendResponse({ ok: true }); soOpenWorkers(); return; }
     if (op === "soStop") {
@@ -543,7 +545,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (op === "bulkStart") {
       const c = await getCfg();
-      const r = await sheetPost(c.url, c.token, { action: msg.mode === "dl" ? "queue2" : "queue" });
+      if (!c.bulkUrl) { log("Bulk Ship: set the Bulk Ship sheet's web app link first (⚙ Settings › Bulk Ship sheet).", "bad"); sendResponse({ ok: false }); return; }
+      const r = await sheetPost(c.bulkUrl, c.bulkToken || "shipcube", { action: msg.mode === "dl" ? "queue2" : "queue" });
       if (!r.ok) { log(`Couldn't read the Bulk Ship sheet: ${r.error}`, "bad"); sendResponse(r); return; }
       if (!(r.items || []).length) { log(msg.mode === "dl" ? "Nothing to download — every batch already has a PDF link." : "No bulk-ship links to do in the sheet.", "warn"); sendResponse({ ok: true }); return; }
       await startBulk(msg.mode, r.items, c.bulkSpeed, c.ownWindow);
@@ -619,6 +622,7 @@ async function applyTeamConfig(force) {
     const c = (await chrome.storage.local.get("cfg")).cfg || {};
     const so = Object.assign({}, c.so || {});
     if (t.webAppUrl) c.url = t.webAppUrl;
+    if (t.bulkWebAppUrl) { c.bulkUrl = t.bulkWebAppUrl; if (t.bulkPassword) c.bulkToken = t.bulkPassword; }
     if (t.password) c.token = t.password;
     if (t.speed) c.speed = +t.speed;
     if (t.bulkSpeed) c.bulkSpeed = +t.bulkSpeed;

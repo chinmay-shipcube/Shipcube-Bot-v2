@@ -72,13 +72,22 @@ window.addEventListener("message", (e) => {
   }
 });
 
-// v2: the side panel uses the same Google Sheet link + password as the in-page settings (first time only)
+// v2: Bulk Ship keeps its OWN Google Sheet link (separate from Single orders).
+//  * a PC that used the old bot: its in-page Bulk Ship link is copied into the side panel once
+//  * from then on the side panel's "Bulk Ship sheet" link is used by the pages too (new PCs need no in-page setup)
+function syncBulkSheet(c) {
+  try {
+    const pageSheet = JSON.parse(localStorage.getItem("shipcubeBot.sheet") || "{}");
+    if (!c.bulkUrl && pageSheet.url) { chrome.storage.local.set({ cfg: Object.assign({}, c, { bulkUrl: pageSheet.url, bulkToken: pageSheet.token || "shipcube" }) }); return; }
+    if (c.bulkUrl && (pageSheet.url !== c.bulkUrl || (c.bulkToken && pageSheet.token !== c.bulkToken)))
+      localStorage.setItem("shipcubeBot.sheet", JSON.stringify(Object.assign({ on: true }, pageSheet, { url: c.bulkUrl, token: c.bulkToken || "shipcube" })));
+  } catch (er) {}
+}
 try {
-  const pageSheet = JSON.parse(localStorage.getItem("shipcubeBot.sheet") || "{}");
-  if (pageSheet && pageSheet.url) chrome.storage.local.get("cfg", (r) => {
-    const c = (r && r.cfg) || {};
-    if (!c.url) chrome.storage.local.set({ cfg: Object.assign({}, c, { url: pageSheet.url, token: pageSheet.token || "shipcube" }) });
-  });
+  if (/(^|\.)shipping\.shiphero\.com$/.test(location.hostname)) {
+    chrome.storage.local.get("cfg", (r) => syncBulkSheet((r && r.cfg) || {}));
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.cfg && ch.cfg.newValue) syncBulkSheet(ch.cfg.newValue); });
+  }
 } catch (er) {}
 
 // v2: buttons in the side panel for this ShipHero tab (Fill box now, Pick now, Settings…)

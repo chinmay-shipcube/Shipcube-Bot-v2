@@ -17,7 +17,7 @@ function fillMain() {
   $("from").value = cfg.so.from || ""; $("to").value = cfg.so.to || "";
   rangeHint(); cliMain();
   $("skipDone").checked = cfg.so.skipDone !== false;
-  $("dry").checked = !!cfg.so.dry;
+
   $("ownWin").checked = cfg.ownWindow !== false;
   showSheet();
 }
@@ -108,13 +108,19 @@ $("count").oninput = () => {
   cfg.so.to = n ? String(f + n - 1) : ""; $("to").value = cfg.so.to; rangeHint(); saveSoon();
 };
 $("skipDone").onchange = () => { cfg.so.skipDone = $("skipDone").checked; saveSoon(); };
-$("dry").onchange = () => { cfg.so.dry = $("dry").checked; saveSoon(); };
+$("soTest").onclick = async () => {        // test run: first 5 orders, no Complete order, nothing written
+  if (so && so.running) return;
+  await findOpenSheet();
+  if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
+  await saveCfg(); send("soStart", { fresh: true, test: true, openSheet: curSheet().url });
+};
 $("ownWin").onchange = () => { cfg.ownWindow = $("ownWin").checked; saveSoon(); };
 
 function openSettings() {
   $("main").classList.add("hide"); $("settings").classList.remove("hide"); showSteps(); window.scrollTo(0, 0);
   const s = cfg.so;
   $("cUrl").value = cfg.url || ""; $("cToken").value = cfg.token || "";
+  $("bUrl").value = cfg.bulkUrl || ""; $("bToken").value = cfg.bulkToken || "";
 
   $("soManual").checked = !!s.manualCols; $("soId").value = s.idCol || ""; $("soOrd").value = s.orderCol || ""; $("soSt").value = s.statusCol || "";
   $("soVal").value = s.value || "Completed"; $("soErr").value = s.errValue || "Error"; $("soAl").value = s.alreadyValue || "Already Fulfilled";
@@ -125,6 +131,7 @@ function openSettings() {
 function readSettings() {
   const L = (v) => String(v || "").toUpperCase().replace(/[^A-Z]/g, "");
   cfg.url = $("cUrl").value.trim(); cfg.token = $("cToken").value.trim() || "shipcube";
+  cfg.bulkUrl = $("bUrl").value.trim(); cfg.bulkToken = $("bToken").value.trim() || "shipcube";
   Object.assign(cfg.so, {
 
     manualCols: $("soManual").checked, idCol: L($("soId").value), orderCol: L($("soOrd").value), statusCol: L($("soSt").value),
@@ -138,7 +145,7 @@ function showSteps() {
   $("gear").textContent = set ? "← Back" : "⚙ Settings";
 }
 function closeSettings() { $("settings").classList.add("hide"); $("main").classList.remove("hide"); showSteps(); fillMain(); }
-$("backTop").onclick = () => closeSettings();
+
 $("gear").onclick = () => ($("settings").classList.contains("hide") ? openSettings() : closeSettings());
 $("closeSet").onclick = closeSettings;
 // ---------------- clients (each with its own box rules) ----------------
@@ -228,7 +235,7 @@ function renderSO() {
   $("soStart").textContent = running && s.paused ? "▶ Resume" : (!running && s && left > 0 ? "▶ Continue" : "▶ Start");
   $("soStart").disabled = running && !s.paused;
   $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
-  $("soStop").disabled = !running; $("soFresh").disabled = running;
+  $("soStop").disabled = !running; $("soFresh").disabled = running; $("soTest").disabled = running;
   // speed
   const d = s && s.durations && s.durations.length ? s.durations.reduce((a, b) => a + b, 0) / s.durations.length : 0;
   $("rate").textContent = running && d ? `≈ ${(60000 / d * Math.max(1, active.length)).toFixed(1)} orders/min` : "";
@@ -246,7 +253,7 @@ function renderSO() {
     $("cpF").onclick = () => navigator.clipboard.writeText("Row\tOrder\tProblem\n" + f.map((x) => `${x.row}\t${x.order}\t${x.msg}`).join("\n"));
   }
   $("soAlert").classList.toggle("hide", !(s && s.dry && running));
-  $("soAlert").textContent = "DRY RUN — Complete order is not clicked and nothing is written to the sheet.";
+  $("soAlert").textContent = "🧪 TEST RUN — first 5 orders: Complete order is not clicked and nothing is written to the sheet.";
 }
 function bstep(k, st) { const el = document.querySelector(`[data-bstep="${k}"]`); if (el) el.className = "st" + (st ? " " + st : ""); }
 function renderBulk() {
@@ -368,6 +375,12 @@ async function teamInfo() {
   const v = (await chrome.storage.local.get("teamVer")).teamVer;
   $("teamInfo").innerHTML = `This PC: bot <b>v${chrome.runtime.getManifest().version}</b> · team settings <b>${v ? esc(v) : "not loaded"}</b>`;
 }
+$("testBulkSheet").onclick = async () => {
+  readSettings(); await saveCfg(); $("testBulkSheetOut").textContent = "…";
+  if (!cfg.bulkUrl) { $("testBulkSheetOut").innerHTML = '<span class="bad">Paste the Bulk Ship sheet\'s web app link</span>'; return; }
+  const r = await send("testSheet", { which: "bulkSheet" });
+  $("testBulkSheetOut").innerHTML = r.ok ? `<span class="ok">✓ ${esc(r.sheet)} — columns: ${esc((r.columns || []).join(", "))}${r.version ? ` · script v${r.version}` : ""}</span>` : `<span class="bad">✗ ${esc(r.error)}</span>`;
+};
 $("teamExport").onclick = async () => {
   readSettings(); cliStore(); await saveCfg();
   const pf = (await chrome.storage.local.get("pflags")).pflags || {};
@@ -375,6 +388,7 @@ $("teamExport").onclick = async () => {
   const t = {
     configVersion: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
     webAppUrl: cfg.url || "", password: cfg.token || "",
+    bulkWebAppUrl: cfg.bulkUrl || "", bulkPassword: cfg.bulkToken || "",
     speed: cfg.speed || 4, bulkSpeed: cfg.bulkSpeed || 2, ownWindow: cfg.ownWindow !== false,
     sheets: (cfg.so.sheets || []).map((x) => ({ name: x.name, url: x.url })),
     client: cfg.so.client || "",

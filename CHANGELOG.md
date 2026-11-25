@@ -4,6 +4,8 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.4.2 | Dry run tick box replaced by a 🧪 Test run button (first 5 orders, no Complete, nothing written). Duplicate Back button in Settings removed. |
+| 2.4.1 | Bulk Ship has its own sheet link (⚙ Settings › Bulk Ship sheet), separate from Single orders; it is also given to the Bulk Ship pages, so new PCs need no in-page setup. |
 | 2.4.0 | Already-fulfilled orders → “Already Fulfilled”. Kitsch: 11–19 → 12x9x4 Box, 20+ → 13x10x8_BOX. ShipHero pop-ups (order on hold, SKU error…) → bot clicks Show details, writes the details in Status (red), clicks Exit Order. Sheet script v11. |
 | 2.3.0 | Bulk Ship kept separate: it only runs when **Bulk Ship automation** is ON on that PC (default OFF) or inside ▶ Generate all / ▶ Download all. Generate labels is clicked ONLY by ▶ 1. Generate all. Old auto-generate switch reset; never shared via team-config. |
 | 2.2.0 | Git updates: the bot reloads itself after `git pull` (UPDATE.bat). Shared team settings in `team-config.json` (Settings › Team & updates › Export). |

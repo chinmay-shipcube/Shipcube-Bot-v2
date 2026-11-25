@@ -102,10 +102,9 @@
       <span class="muted">or</span> <input id="count" inputmode="numeric" placeholder="all" title="How many rows from the From row (e.g. From 850 + 50 rows = rows 850–899)"> <span class="muted">rows</span></div>
     <div class="hint" id="rangeHint" style="margin-top:3px"></div>
     <label style="margin-top:8px;font-size:12px" title="Rows whose Status already says Completed are not opened again"><input type="checkbox" id="skipDone"> Skip rows already “Completed” / “Already Fulfilled”</label>
-    <label style="margin-top:4px;font-size:12px" title="Everything except the final click: items packed + box chosen, Complete order is NOT clicked and nothing is written. Use it to check the first few orders."><input type="checkbox" id="dry"> Dry run (don't click Complete order)</label>
     <label style="margin-top:4px;font-size:12px" title="The bot's ShipHero tabs open in a separate Chrome window, so you can keep working in yours. Don't close it while the bot runs."><input type="checkbox" id="ownWin"> Bot tabs in their own window</label>
     <div class="row" style="margin-top:10px">
-      <button class="p" id="soStart">▶ Start</button><button id="soPause">⏸ Pause</button><button id="soStop">■ Stop</button>
+      <button class="p" id="soStart">▶ Start</button><button id="soPause">⏸ Pause</button><button id="soStop">■ Stop</button><button id="soTest" title="TEST RUN on the first 5 orders of your rows: packs the items and picks the box, but does NOT click Complete order and writes nothing to the sheet">🧪 Test run</button>
       <button id="soFresh" title="Forget the unfinished run and read the sheet again">↺ From the start</button>
     </div>
     <div class="alert hide" id="soAlert"></div>
@@ -172,12 +171,16 @@
 
 <!-- ================= SETTINGS ================= -->
 <div class="bd hide" id="settings">
-  <div class="row" style="margin-bottom:10px"><button id="backTop">← Back</button><span class="hint">Change what you need, then Save.</span></div>
   <div class="set">
-    <h4>Google Sheet (Apps Script web app)</h4>
+    <h4>Single orders sheet — web app</h4>
     <div class="f"><span>Web app link</span><input id="cUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
     <div class="f"><span>Password</span><input id="cToken" placeholder="shipcube"></div>
     <div class="row"><button id="testBulk">Test connection</button><span class="hint" id="testBulkOut"></span></div>
+    <h4 style="margin-top:14px">Bulk Ship sheet — web app</h4>
+    <div class="hint" style="margin-bottom:4px">The sheet with the Bulk Ship batch links / Batch IDs / PDF links (Generate all, Download all, batch rows). Kept separate from Single orders.</div>
+    <div class="f"><span>Web app link</span><input id="bUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="f"><span>Password</span><input id="bToken" placeholder="shipcube"></div>
+    <div class="row"><button id="testBulkSheet">Test connection</button><span class="hint" id="testBulkSheetOut"></span></div>
     <details id="howTo" style="margin-top:8px"><summary class="hint" style="cursor:pointer"><b>How to update the script</b> (when the bot says it's old)</summary>
       <ol class="hint" style="margin:6px 0 0 16px;padding:0;line-height:1.55">
         <li>Open the Google Sheet whose <b>Extensions › Apps Script</b> made the web app link above (the link starts with the same <i>…/macros/s/…</i>).</li>

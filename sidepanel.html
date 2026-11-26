@@ -3,27 +3,31 @@
 <title>ShipCube Bot</title>
 <style>
   /* ShipHero look: white panels, ShipHero blue for actions, coral-red brand accent, grey canvas, navy text */
-  :root{--blue:#2D6CDF;--blue2:#1F57C3;--blue-soft:#EAF1FD;--red:#E8473D;--ink:#1F2A44;--mute:#6B7489;--line:#E1E5EC;--soft:#F5F7FA;--canvas:#F2F4F8}
+  :root{--blue:#2D6CDF;--blue2:#1F57C3;--blue-soft:#EAF1FD;--red:#E8473D;--ink:#1F2A44;--mute:#6B7489;--line:#E1E5EC;--soft:#F5F7FA;--canvas:#F2F4F8;--card:#fff;--badbg:#FDF3F2;--badbd:#F6C4C0;--badtx:#8E2A22;--warnbg:#FFF6E5;--warnbd:#F5D28A;--warntx:#8A5A00;--waitbd:#C9DAF8;--okc:#1E8E5A;color-scheme:light}
+  :root[data-theme=dark]{--blue:#5B9BFF;--blue2:#7DB0FF;--blue-soft:#1E2F4D;--red:#FF6B61;--ink:#E6EAF2;--mute:#9AA4B8;--line:#2E3648;--soft:#1B2130;--canvas:#0F131C;--card:#161B27;--badbg:#2A1618;--badbd:#5A2A2D;--badtx:#FFB4AD;--warnbg:#2B2411;--warnbd:#5C4A1A;--warntx:#F3CF7A;--waitbd:#2F4A7A;--okc:#4ADE9A;color-scheme:dark}
+  :root[data-theme=dark] button.p,:root[data-theme=dark] button.p:hover,:root[data-theme=dark] .st.done,:root[data-theme=dark] .tabs i{color:#0B1220}
+  :root[data-theme=dark] .ok,:root[data-theme=dark] .stats .d b{color:var(--okc)}:root[data-theme=dark] .bad{color:#FF8A80}:root[data-theme=dark] .warn{color:#F3CF7A}
+  .hd .th{cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);margin-left:auto}.hd .th+.gear{margin-left:0}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--canvas);color:var(--ink);font:13px "Segoe UI",system-ui,sans-serif;line-height:1.4}
-  .hd{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 12px;background:#fff;color:var(--ink);font-weight:700;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+  .hd{display:flex;align-items:center;gap:10px;padding:10px 14px 10px 12px;background:var(--card);color:var(--ink);font-weight:700;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
   .hd img{width:30px;height:30px;border-radius:7px}
   .hd .ttl{display:flex;flex-direction:column;line-height:1.2;font-size:14px}
   .hd .ttl small{font-weight:400;color:var(--mute);font-size:11px}
   .hd .ttl small b{color:var(--red);font-weight:600}
-  .hd .gear{margin-left:auto;cursor:pointer;color:var(--blue);font-weight:600;white-space:nowrap;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  .hd .gear{margin-left:auto;cursor:pointer;color:var(--blue);font-weight:600;white-space:nowrap;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
   .hd .gear:hover{background:var(--blue-soft);border-color:var(--blue)}
-  .steps{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line)}
+  .steps{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--line)}
   .steps.hide{display:none}
   .st{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--soft);color:var(--mute);border:1px solid var(--line)}
   .st.done{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}
-  .st.wait{background:var(--blue-soft);color:var(--blue);border-color:#C9DAF8;font-weight:600}
-  .st.bad{background:#FDECEB;color:#C0392B;border-color:#F6C4C0}
+  .st.wait{background:var(--blue-soft);color:var(--blue);border-color:var(--waitbd);font-weight:600}
+  .st.bad{background:var(--badbg);color:var(--badtx);border-color:var(--badbd)}
   .bd{padding:12px}
-  #main,#settings{background:#fff;margin:10px;border:1px solid var(--line);border-radius:8px}
+  #main,#settings{background:var(--card);margin:10px;border:1px solid var(--line);border-radius:8px}
   .log{height:230px;overflow:auto;font:12px Consolas,monospace;background:var(--soft);border-radius:6px;padding:8px;margin:8px 0;white-space:pre-wrap;border:1px solid var(--line)}
   .ok{color:#1E8E5A}.warn{color:#B7791F}.bad{color:#D93025}.muted{color:var(--mute)}
-  button{font:600 12.5px "Segoe UI",sans-serif;border-radius:6px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);line-height:1.2}
+  button{font:600 12.5px "Segoe UI",sans-serif;border-radius:6px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);line-height:1.2}
   button:hover{border-color:var(--blue);color:var(--blue)}
   button.p{background:var(--blue);color:#fff;border-color:var(--blue)}
   button.p:hover{background:var(--blue2);color:#fff}
@@ -31,27 +35,27 @@
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   label{display:flex;gap:6px;align-items:center;cursor:pointer;margin:0;font-weight:400}
   input[type=checkbox]{accent-color:var(--blue);margin:0;width:14px;height:14px}
-  input:not([type=checkbox]),select,textarea{font:12.5px "Segoe UI",sans-serif;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+  input:not([type=checkbox]),select,textarea{font:12.5px "Segoe UI",sans-serif;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
   input:not([type=checkbox]):focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
   textarea{width:100%;font-family:Consolas,monospace}
   .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--soft)}
   .seg button{border:0;border-radius:0;padding:8px 14px;background:transparent;flex:1;color:var(--mute)}
-  .seg button.on{background:#fff;color:var(--blue);box-shadow:inset 0 -2px 0 var(--blue)}
+  .seg button.on{background:var(--card);color:var(--blue);box-shadow:inset 0 -2px 0 var(--blue)}
   .lbl{font-size:11px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
   .range input{width:64px;text-align:center;font-weight:600}
   .file{font-size:11.5px;color:var(--mute);margin-top:6px}
   .file b{color:var(--ink)}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
-  .stats div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 4px;text-align:center}
+  .stats div{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 4px;text-align:center}
   .stats b{display:block;font-size:17px;color:var(--ink)}
   .stats span{font-size:10.5px;color:var(--mute)}
   .stats .d b{color:#1E8E5A}.stats .f b{color:var(--red)}.stats .n b{color:var(--blue)}
   .tabs{margin-top:8px;font-size:12px}
   .tabs div{display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)}
   .tabs i{font-style:normal;background:var(--blue);color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700}
-  .probs{border:1px solid #F6C4C0;background:#FDF3F2;border-radius:6px;padding:8px;margin-top:8px;font-size:12px;color:#8E2A22}
-  .probs .pl{max-height:150px;overflow:auto;margin-top:6px;font:11.5px Consolas,monospace;white-space:pre;background:#fff;border:1px solid #F6C4C0;border-radius:6px;padding:6px;color:var(--ink)}
-  .alert{margin-top:8px;background:#FFF6E5;border:1px solid #F5D28A;color:#8A5A00;border-radius:6px;padding:6px 8px;font-size:12px;font-weight:600}
+  .probs{border:1px solid var(--badbd);background:var(--badbg);border-radius:6px;padding:8px;margin-top:8px;font-size:12px;color:var(--badtx)}
+  .probs .pl{max-height:150px;overflow:auto;margin-top:6px;font:11.5px Consolas,monospace;white-space:pre;background:var(--card);border:1px solid var(--badbd);border-radius:6px;padding:6px;color:var(--ink)}
+  .alert{margin-top:8px;background:var(--warnbg);border:1px solid var(--warnbd);color:var(--warntx);border-radius:6px;padding:6px 8px;font-size:12px;font-weight:600}
   .set{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--soft);margin-bottom:10px}
   .set h4{margin:2px 0 8px;color:var(--ink);font-size:13px}
   .set .f{display:grid;grid-template-columns:118px 1fr;gap:6px;align-items:center;margin:5px 0}
@@ -64,8 +68,10 @@
   .hide{display:none!important}
   .foot{font-size:11px;color:var(--mute);text-align:center;margin-top:6px}
 </style>
+<script>try{var t=localStorage.getItem("scbTheme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t}catch(e){}</script>
 </head><body>
 <div class="hd"><img alt="" src="icon48.png"><div class="ttl">ShipCube Bot<small id="ver">v2 · ShipHero → Google Sheet</small></div>
+  <span class="gear th" id="themeBtn" title="Dark / light theme">🌙</span>
   <span class="gear" id="gear">⚙ Settings</span></div>
 <div class="steps" id="steps"><span class="st" data-step="read">1 · Read sheet</span><span class="st" data-step="work">2 · Tabs working</span><span class="st" data-step="write">3 · Writing to sheet</span><span class="st" data-step="done">4 · Done</span></div>
 <div class="steps hide" id="bsteps"><span class="st" data-bstep="read">1 · Read sheet</span><span class="st" data-bstep="gen">2 · Generate labels</span><span class="st" data-bstep="dl">3 · Download PDFs</span><span class="st" data-bstep="done">4 · Done</span></div>
@@ -137,7 +143,7 @@
       <button id="bStop">■ Stop</button>
     </div>
     <div class="hint" style="margin-top:6px">Several links run at once; the order statuses of one link run one after another in the same tab. Every tab's steps show in the log below.</div>
-    <div class="set" style="margin:12px 0 0;padding:8px 10px;background:#fff">
+    <div class="set" style="margin:12px 0 0;padding:8px 10px;background:var(--card)">
       <label style="font-weight:600" title="OFF = the bot does nothing on Bulk Ship pages you open yourself. ▶ Generate all / ▶ Download all still work."><input type="checkbox" data-pf="shipcubeBot.bulkOn" data-def="0"> Bulk Ship automation on this PC</label>
       <div class="hint" id="bulkOffNote" style="margin-top:3px">OFF: Bulk Ship pages you open yourself are left alone. Only ▶ 1. Generate all / ▶ 2. Download all use the bot.</div>
       <div class="hint" style="margin-top:3px">Generate labels is clicked <b>only</b> by ▶ 1. Generate all — never on a page you opened yourself.</div>

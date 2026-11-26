@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ShipCube Bot v2",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "ShipHero helper with a side panel: Bulk Ship (many tabs at once) and Single Orders (pack, box by qty, Complete order, write Completed to the sheet).",
   "content_scripts": [
     {

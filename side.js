@@ -371,7 +371,7 @@ function detect() {
 function showCols() {
   const man = !!cfg.so.manualCols;
   $("soManual").checked = man;
-  ["soId", "soOrd", "soSt"].forEach((k) => { $(k).disabled = !man; $(k).style.background = man ? "#fff" : "var(--soft)"; });
+  ["soId", "soOrd", "soSt"].forEach((k) => { $(k).disabled = !man; $(k).style.background = man ? "var(--card)" : "var(--soft)"; });
   if (man) { $("soId").value = cfg.so.idCol || ""; $("soOrd").value = cfg.so.orderCol || ""; $("soSt").value = cfg.so.statusCol || ""; }
 }
 const colL = (v) => String(v || "").toUpperCase().replace(/[^A-Z]/g, "");
@@ -442,3 +442,14 @@ $("updCheck").onclick = async () => {
 };
 teamInfo();
 load().then(async () => { showSheet(); await findOpenSheet(); loadTabs(true); });
+
+// ---- dark / light theme (remembered; first time follows the computer's setting) ----
+(function () {
+  const btn = document.getElementById("themeBtn");
+  const apply = (t) => { document.documentElement.dataset.theme = t; if (btn) btn.textContent = t === "dark" ? "☀️" : "🌙"; };
+  apply(document.documentElement.dataset.theme || "light");
+  if (btn) btn.onclick = () => {
+    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    apply(t); try { localStorage.setItem("scbTheme", t); } catch (e) {}
+  };
+})();

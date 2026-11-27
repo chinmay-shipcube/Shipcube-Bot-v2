@@ -125,10 +125,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type !== "sheet") return;
   if (!ALLOWED.test(msg.url || "")) { sendResponse({ ok: false, error: "That isn't an Apps Script web app link (…/exec)" }); return; }
-  fetch(msg.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: msg.body, redirect: "follow" })
-    .then((r) => r.text())
-    .then((t) => { try { sendResponse(JSON.parse(t)); } catch { sendResponse({ ok: false, error: /<html/i.test(t) ? "Google returned a web page — check the web app is deployed with access: Anyone" : "Unexpected reply: " + t.slice(0, 150) }); } })
-    .catch((e) => sendResponse({ ok: false, error: "Network error: " + e.message }));
+  // Google sometimes answers with an HTML page for a moment (busy / too many requests / sign-in hiccup): try again before giving up
+  (async () => {
+    let last = "";
+    for (let k = 0; k < 4; k++) {
+      if (k) await new Promise((r) => setTimeout(r, [0, 2500, 6000, 12000][k]));
+      try {
+        const t = await (await fetch(msg.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: msg.body, redirect: "follow" })).text();
+        try { return sendResponse(JSON.parse(t)); } catch {}
+        if (/<html/i.test(t)) {
+          const title = ((t.match(/<title>([^<]*)<\/title>/i) || [])[1] || "").trim();
+          const txt = t.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<[^>]+>/gi, " ").replace(/\s+/g, " ").trim().slice(0, 140);
+          last = `Google sent a web page instead of data (${title || txt || "no text"})`; continue;
+        }
+        return sendResponse({ ok: false, error: "Unexpected reply: " + t.slice(0, 150) });
+      } catch (e) { last = "Network error: " + e.message; }
+    }
+    sendResponse({ ok: false, error: last + " — if it keeps happening: Apps Script › Deploy › Manage deployments › ✎ › Who has access = Anyone › New version › Deploy" });
+  })();
   return true;
 });
 
@@ -169,12 +183,24 @@ async function log(m, c) {
 // ---------------- Google Sheet ----------------
 async function sheetPost(url, token, payload) {
   if (!ALLOWED.test(url || "")) return { ok: false, error: "Set the Apps Script web app link (…/exec) in ⚙ Settings" };
-  try {
-    const ctl = new AbortController(); const kill = setTimeout(() => ctl.abort(), 60000);
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(Object.assign({ token }, payload)), redirect: "follow", signal: ctl.signal }).finally(() => clearTimeout(kill));
-    const t = await r.text();
-    try { return JSON.parse(t); } catch { return { ok: false, error: /<html/i.test(t) ? "Google returned a web page — deploy the web app with access: Anyone" : "Unexpected reply: " + t.slice(0, 150) }; }
-  } catch (e) { return { ok: false, error: e.name === "AbortError" ? "the sheet didn't answer in 60 s" : "Network error: " + e.message }; }
+  // Google now and then answers with an HTML page for a moment (busy / too many requests): try again 3 more times before giving up
+  let last = "";
+  for (let k = 0; k < 4; k++) {
+    if (k) await new Promise((r) => setTimeout(r, [0, 3000, 8000, 15000][k]));
+    try {
+      const ctl = new AbortController(); const kill = setTimeout(() => ctl.abort(), 60000);
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(Object.assign({ token }, payload)), redirect: "follow", signal: ctl.signal }).finally(() => clearTimeout(kill));
+      const t = await r.text();
+      try { return JSON.parse(t); } catch {}
+      if (/<html/i.test(t)) {
+        const title = ((t.match(/<title>([^<]*)<\/title>/i) || [])[1] || "").trim();
+        const txt = t.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<[^>]+>/gi, " ").replace(/\s+/g, " ").trim().slice(0, 140);
+        last = `Google sent a web page instead of data (${title || txt || "no text"})`; continue;
+      }
+      return { ok: false, error: "Unexpected reply: " + t.slice(0, 150) };
+    } catch (e) { last = e.name === "AbortError" ? "the sheet didn't answer in 60 s" : "Network error: " + e.message; }
+  }
+  return { ok: false, error: last + " — if it keeps happening: Apps Script › Deploy › Manage deployments › ✎ › Who has access = Anyone › New version › Deploy" };
 }
 
 // ---------------- the bot's own window (work in yours while it runs) ----------------
@@ -190,6 +216,12 @@ async function newTab(url, own) {
   } else id = (await chrome.tabs.create({ url, active: false })).id;
   chrome.tabs.update(id, { autoDiscardable: false }).catch(() => {});   // Chrome must not put the tab to sleep
   return id;
+}
+async function closeBotWindowNow() {
+  const w = (await S.get("win")).win || {};
+  if (!w.id) return;
+  try { await chrome.windows.remove(w.id); } catch {}
+  await S.remove("win");
 }
 async function closeBotWindowIfEmpty() {
   const w = (await S.get("win")).win || {};
@@ -305,7 +337,7 @@ function soTarget(c, openSheet) {
   if (so.manualCols && so.orderCol && so.statusCol) Object.assign(t, { orderCol: so.orderCol, statusCol: so.statusCol, idCol: so.idCol });
   return t;
 }
-async function soStart(fresh, openSheet, test, speed) {
+async function soStart(fresh, openSheet, test, speed, check) {
   const c = await getCfg(); const so = c.so;
   if (speed) c.speed = +speed;                     // exactly the speed shown in the panel
   const url = so.url || c.url, token = so.token || c.token;
@@ -330,18 +362,18 @@ async function soStart(fresh, openSheet, test, speed) {
   log(`Sheet “${r.file || ""}${r.file ? " › " : ""}${r.sheet}”: Order Id ${tgt.idCol || "—"} · Order Number ${tgt.orderCol} · Status ${tgt.statusCol}`, "muted");
   let items = r.items || [];
   const total = items.length;
-  if (so.check === "blank") items = items.filter((x) => !String(x.status).trim());
-  else if (so.check === "error") items = items.filter((x) => /^error/i.test(String(x.status).trim()));
-  else if (so.skipDone) items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
+  const chk = check || so.check;
+  if (chk === "blank") items = items.filter((x) => !String(x.status).trim());
+  else if (chk === "error") items = items.filter((x) => { const t = String(x.status).trim(); return t && !/^(completed?|already ful+fill?ed)$/i.test(t); });   // any error text: Error (…) or ShipHero's own message
+  else items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
   const skipped = total - items.length;
-  if (test) items = items.slice(0, 5);          // 🧪 Test run: the first 5 orders only
   if (so.reverse) items = items.slice().reverse();          // ⇅ Reverse: bottom to top
   const bad = items.filter((x) => x.sci && !x.id);
   items = items.filter((x) => !(x.sci && !x.id));
   if (bad.length) log(`Rows ${bad.map((x) => x.row).join(", ")}: the Order Number shows as 5.78E+17 (lost digits) and there's no Order Id — skipped. Format that column as Plain text.`, "warn");
   if (!items.length) { log(`Nothing to do on "${r.sheet}"${skipped ? ` — ${skipped} row(s) already Completed` : ""}.`, "warn"); return; }
   s = { running: true, paused: false, items, pos: 0, retry: [], active: {}, idle: [], ok: 0, fail: 0, dryOk: 0, failed: [], writes: [], written: 0,
-        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: !!test, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [] };
+        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: false, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [] };
   await setSO(s);
   log(`Single orders: ${items.length} order(s) on "${r.sheet}"${skipped ? `, ${skipped} already Completed skipped` : ""} — ${s.conc} tab${s.conc > 1 ? "s" : ""} at once${s.dry ? " · 🧪 TEST RUN (Complete order is NOT clicked, nothing written)" : ""}`, "ok");
   return soOpenWorkers();
@@ -440,45 +472,54 @@ async function soResult(tabId, res) {
     }
     await setSO(s);
   });
-  if (wroteNow) soFlush(); else soFlushSoon();
+  if (wroteNow) soFlush(); else soFlushSoon(4000);
   await soAssign(tabId);
 }
 let flushT = null;
-function soFlushSoon() { clearTimeout(flushT); flushT = setTimeout(soFlush, 5000); }
+function soFlushSoon(ms) { if (flushT) return; flushT = setTimeout(() => { flushT = null; soFlush(); }, ms || 4000); }   // throttle, not debounce: results arriving every few seconds must not keep postponing the write
 let flushing = false;
-async function soFlush() {
-  if (flushing) return soFlushSoon();
+async function soFlush(force) {
+  if (force) { const s0 = await getSO(); if (s0) { s0.wfail = 0; s0.wstuck = false; s0.werr = ""; await setSO(s0); } }
+  if (flushing) return soFlushSoon(1500);
+  clearTimeout(flushT); flushT = null;
   flushing = true;
   try {
-    const s = await getSO(); if (!s || !s.writes.length) return;
+    const s = await getSO(); if (!s || !s.writes.length || s.wstuck) return;
     const c = await getCfg(); const so = c.so;
-    const batch = s.writes.slice(0, 200);
+    const batch = s.writes.slice(0, s.wb || 200);
     const t = s.target || soTarget(c);
     const r = await sheetPost(so.url || c.url, so.token || c.token, { action: "soWrite", ss: t.ss, tab: t.tab, orderCol: t.orderCol, statusCol: t.statusCol, writes: batch });
     await locked(async () => {
       const s2 = await getSO(); if (!s2) return;
       if (r.ok) {
-        s2.writes = s2.writes.slice(batch.length); s2.written += r.written || 0;
+        s2.writes = s2.writes.slice(batch.length); s2.written += r.written || 0; s2.wfail = 0; s2.werr = ""; s2.wstuck = false;
         const nOk = batch.filter((w) => w.value === (so.value || "Completed")).length, nAl = batch.filter((w) => w.value === (so.alreadyValue || "Already Fulfilled")).length, nErr = batch.length - nOk - nAl;
         log(`Sheet ✓ ${r.written} row(s) written (${nOk} “${so.value || "Completed"}”${nAl ? `, ${nAl} “${so.alreadyValue || "Already Fulfilled"}”` : ""}${nErr ? `, ${nErr} error${nErr > 1 ? "s" : ""} (red)` : ""})${r.moved && r.moved.length ? ` (moved rows found: ${r.moved.join(", ")})` : ""}`, "ok");
         if (r.missing && r.missing.length) log(`Sheet: order(s) not found in the column any more: ${r.missing.join(", ")}`, "warn");
-      } else log(`Sheet ✗ ${r.error} — will retry`, "bad");
+      } else {
+        s2.wfail = (s2.wfail || 0) + 1; s2.werr = String(r.error || "no answer").slice(0, 120);
+        if (s2.wfail % 3 === 0) s2.wb = Math.max(20, Math.floor((s2.wb || 200) / 2));          // a smaller batch is easier for a slow sheet
+        if (s2.wfail >= 10) { s2.wstuck = true; log(`Sheet ✗ ${s2.writes.length} result(s) could NOT be written after ${s2.wfail} tries (${s2.werr}). Press “Write now” to try again, or “Copy results” and paste them yourself.`, "bad"); }
+        else log(`Sheet ✗ ${s2.werr} — try ${s2.wfail}, will retry`, "bad");
+      }
       await setSO(s2);
     });
-    if (!r.ok) setTimeout(soFlush, 15000);
+    if (!r.ok) setTimeout(soFlush, 8000);
   } finally { flushing = false; }
-  const s = await getSO(); if (s && s.writes.length) soFlushSoon(); else soCheckFinish();
+  const s = await getSO(); if (s && s.writes.length && !s.wstuck) soFlushSoon(2000); else soCheckFinish();
 }
 async function soCheckFinish() {
   const s = await getSO();
-  if (!s || !s.running || soLeft(s) > 0 || Object.keys(s.active).length) return;
-  if (s.writes.length) return soFlush();
+  if (!s || !s.running || soLeft(s) > 0) return;
+  const live = Object.entries(s.active).filter(([k, a]) => k !== "new" || Date.now() - (a.at || 0) < 30000);     // a stale "opening…" entry must not hold the run open
+  if (live.length) return;
+  if (s.writes.length && !s.wstuck) return soFlush();
   s.running = false; s.finishedAt = Date.now(); await setSO(s);
   const mins = ((s.finishedAt - s.startedAt) / 60000).toFixed(1);
   log(`Single orders finished ✓ ${s.ok} completed${s.already ? ` (${s.already} already fulfilled)` : ""}${s.dryOk ? `, ${s.dryOk} test ok` : ""}, ${s.fail} failed · ${mins} min`, s.fail ? "warn" : "ok");
   if (s.failed.length) log(`Failed rows: ${s.failed.map((f) => f.row).join(", ")}`, "bad");
   for (const id of s.idle || []) chrome.tabs.remove(id).catch(() => {});
-  setTimeout(closeBotWindowIfEmpty, 3000);
+  setTimeout(closeBotWindowNow, 2500);                       // the run is over: the bot's tabs and window close by themselves
 }
 async function soTabGone(tabId) {
   let had = false;
@@ -494,8 +535,9 @@ async function soTabGone(tabId) {
 chrome.alarms.onAlarm.addListener(async (a) => {
   if (a.name !== "wd") return;
   const s = await getSO(); if (!s) return;
-  if (s.writes && s.writes.length) soFlushSoon();          // results still waiting for the sheet - also after a run
+  if (s.writes && s.writes.length && !s.wstuck) soFlushSoon();          // results still waiting for the sheet - also after a run
   if (!s.running) return;
+  if (soLeft(s) === 0) soCheckFinish();                   // safety net: nothing left, nothing working -> finish
   const now = Date.now();
   for (const [id, x] of Object.entries(s.active)) {
     if (!/^\d+$/.test(id) || now - x.beat < 90000) continue;
@@ -507,7 +549,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
       soResult(+id, { ok: false, retry: true, msg: "page stuck (reloaded twice)" });
     }
   }
-  if (s.writes.length) soFlushSoon();
+  if (s.writes.length && !s.wstuck) soFlushSoon();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -556,8 +598,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         : Object.assign({ action: "soRead", from, to: Math.min(to, from + 200) }, t)));
       return;
     }
+    if (op === "soWriteNow") { sendResponse({ ok: true }); soFlush(true); return; }
     if (op === "soRetry") { sendResponse({ ok: true }); soRetryFailed(); return; }
-    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh || !!msg.test, msg.openSheet || "", !!msg.test, msg.speed); return; }
+    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh, msg.openSheet || "", false, msg.speed, msg.check); return; }
     if (op === "soPause") { await locked(async () => { const s = await getSO(); if (s) { s.paused = true; await setSO(s); } }); log("⏸ Paused — tabs finish the order they're on, then wait.", "warn"); sendResponse({ ok: true }); return; }
     if (op === "soSpeed") {                       // speed changed while running / paused: more tabs open now, fewer as tabs finish
       const n = Math.max(1, Math.min(10, +msg.speed || 4)); let go = false;

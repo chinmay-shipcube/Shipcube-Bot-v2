@@ -4,6 +4,18 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.7.6 | Only the Status cell turns red on an error (not the Order Number); the red is removed when the order is fixed. Sheet script v12 (paste + New version); old red Order Number cells get their neighbours' colour back when fixed.
+| 2.7.5 | The run stops by itself when the rows are done (like the Tracking Bot): bot tabs and window close, a stale “opening” tab can no longer hold it open, and the watchdog finishes a run that has nothing left.
+| 2.7.4 | Test run removed completely (button, first-5 mode and its banner). ▶ Start always really completes orders.
+| 2.7.3 | Error run is now a tick box (like “Bot tabs in their own window”) and ▶ Start does the work. It now catches every error row - also the ones with ShipHero's own message (e.g. “We can't seem to allocate…”), not only “Error (…)”.
+| 2.7.2 | Fixed the Chrome “inline script blocked” error in the side panel (dark-theme start-up code moved to theme.js).
+| 2.7.1 | Sheet script v12. Needs the new sheet script v12 (paste + New version); v11 still works as before.
+| 2.7.0 | ⚠ Error run replaces Test run: runs only the rows whose Status says Error (in the From / To range).
+| 2.6.5 | When Google answers with a web page (busy / too many requests) the bot retries 3 more times (3 s, 8 s, 15 s) and the message now shows what the page says; sheet writes go out every ~4 s instead of 2.5 s (fewer calls).
+| 2.6.4 | Rows already Completed / Already Fulfilled are always skipped (tick box removed; use Check › Only Error / Only blank to redo others). Clearer message when the Google link needs “Anyone” access.
+| 2.6.3 | “Writing…” can no longer hang: the panel shows why a write failed, retries with smaller batches, and after 10 tries stops with “Write now” and “Copy results” buttons (the run still finishes).
+| 2.6.2 | Results reach the sheet quickly: the write timer no longer restarts with every finished order (that kept postponing the write while tabs kept finishing); a write goes out every ~2.5 s, the rest right after.
+| 2.6.1 | Click “row N” (in the tab list or the need-a-look list) → the sheet jumps to that row; click a tab entry → that ShipHero tab comes to the front. Greyed column boxes are darker; “Set them myself” moved to the left.
 | 2.6.0 | One Resume button (Start hides while running). Change the speed any time: while paused then ▶ Resume opens that many tabs; while running more tabs open at once, fewer as tabs finish. ■ Stop closes the bot tabs and window. New: Check (All rows / Only blank / Only Error) and ⇅ Reverse, like the Tracking Bot.
 | 2.5.2 | Dark theme: 🌙 / ☀️ button in the side panel header (remembered; first time follows your computer).
 | 2.5.1 | Columns moved out of Settings onto the main view (above Sheet rows): found automatically, or tick “Set them myself”. |

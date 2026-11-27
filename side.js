@@ -16,7 +16,7 @@ function fillMain() {
   $("bulkSpeed").value = String(cfg.bulkSpeed || 2);
   $("from").value = cfg.so.from || ""; $("to").value = cfg.so.to || "";
   rangeHint(); cliMain(); showCols();
-  $("skipDone").checked = cfg.so.skipDone !== false; $("checkSel").value = cfg.so.check || "all"; $("revBtn").classList.toggle("on", !!cfg.so.reverse);
+  $("skipDone").checked = cfg.so.skipDone !== false; $("errRun").checked = cfg.so.check === "error"; $("checkSel").value = cfg.so.check === "blank" ? "blank" : "all"; $("checkSel").disabled = $("errRun").checked; $("revBtn").classList.toggle("on", !!cfg.so.reverse);
 
   $("ownWin").checked = cfg.ownWindow !== false;
   showSheet();
@@ -108,15 +108,11 @@ $("count").oninput = () => {
   cfg.so.to = n ? String(f + n - 1) : ""; $("to").value = cfg.so.to; rangeHint(); saveSoon();
 };
 $("checkSel").onchange = () => { cfg.so.check = $("checkSel").value; saveSoon(); };
+$("errRun").onchange = () => { cfg.so.check = $("errRun").checked ? "error" : $("checkSel").value; $("checkSel").disabled = $("errRun").checked; saveSoon(); };
 $("revBtn").onclick = () => { cfg.so.reverse = !cfg.so.reverse; $("revBtn").classList.toggle("on", cfg.so.reverse); saveSoon(); };
 $("skipDone").onchange = () => { cfg.so.skipDone = $("skipDone").checked; saveSoon(); };
 $("soRetry").onclick = async () => { if (so && so.running) return; syncMain(); await saveCfg(); send("soRetry"); };
-$("soTest").onclick = async () => {        // test run: first 5 orders, no Complete order, nothing written
-  if (so && so.running) return;
-  await findOpenSheet();
-  if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
-  syncMain(); await saveCfg(); send("soStart", { fresh: true, test: true, openSheet: curSheet().url, speed: cfg.speed });
-};
+
 $("ownWin").onchange = () => { cfg.ownWindow = $("ownWin").checked; saveSoon(); };
 
 function openSettings() {
@@ -198,7 +194,7 @@ $("testSo").onclick = async () => {
 function syncMain() {
   cfg.speed = +$("speed").value || 4; cfg.bulkSpeed = +$("bulkSpeed").value || 2;
   cfg.so.from = $("from").value.replace(/\D/g, ""); cfg.so.to = $("to").value.replace(/\D/g, "");
-  cfg.so.skipDone = $("skipDone").checked; cfg.so.check = $("checkSel").value; cfg.ownWindow = $("ownWin").checked;
+  cfg.so.skipDone = $("skipDone").checked; cfg.so.check = $("errRun").checked ? "error" : $("checkSel").value; cfg.ownWindow = $("ownWin").checked;
   if ($("cliMain").value) cfg.so.client = $("cliMain").value;
   cfg.so.manualCols = $("soManual").checked;
   if (cfg.so.manualCols) { cfg.so.idCol = colL($("soId").value); cfg.so.orderCol = colL($("soOrd").value); cfg.so.statusCol = colL($("soSt").value); }
@@ -244,7 +240,7 @@ function renderSO() {
   $("soStart").textContent = running && s.paused ? "▶ Resume" : (!running && s && left > 0 ? "▶ Continue" : "▶ Start");
   $("soStart").classList.toggle("hide", running);          // while running (or paused) only Pause/Resume + Stop show
   $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
-  $("soStop").disabled = !running; $("soFresh").disabled = running; $("soTest").disabled = running;
+  $("soStop").disabled = !running; $("soFresh").disabled = running;
   const nf = s && !running ? (s.failed || []).filter((f) => f.item).length : 0;          // ↻ Retry failed after a run
   $("soRetry").classList.toggle("hide", !nf); $("soRetry").textContent = `↻ Retry failed (${nf})`;
   // speed
@@ -254,18 +250,18 @@ function renderSO() {
   step("read", s ? "done" : ""); step("work", running ? (s.paused ? "wait" : "done") : s && s.finishedAt ? "done" : "");
   step("write", s && s.writes && s.writes.length ? "wait" : s && s.written ? "done" : ""); step("done", s && s.finishedAt && !running ? (s.fail ? "bad" : "done") : "");
   // tabs
-  $("soTabs").innerHTML = active.map(([, a], i) => `<div><i>${i + 1}</i> row ${a.item.row} · <b>${esc(a.item.order || a.item.id)}</b> <span class="muted">${STAGE[a.stage] || (a.via === "search" ? "searching" : "opening")}</span></div>`).join("")
+  $("soTabs").innerHTML = active.map(([id, a], i) => `<div class="go" data-tab="${esc(id)}" title="Click: show this ShipHero tab"><i>${i + 1}</i> <span class="lnk" data-row="${a.item.row}" title="Click: show this row in the sheet">row ${a.item.row}</span> · <b>${esc(a.item.order || a.item.id)}</b> <span class="muted">${STAGE[a.stage] || (a.via === "search" ? "searching" : "opening")}</span></div>`).join("")
     + (s && s.paused ? `<div class="warn">Paused — ${(s.idle || []).length} tab(s) waiting</div>` : "")
-    + (s && s.writes && s.writes.length ? `<div class="muted">⏳ ${s.writes.length} result(s) waiting to be written to the sheet…</div>` : "");
+    + (s && s.writes && s.writes.length ? `<div class="${s.wstuck ? "bad" : "muted"}">⏳ ${s.writes.length} result(s) waiting to be written to the sheet…${s.werr ? ` (${esc(s.werr)})` : ""} <button id="wNow" style="padding:2px 8px">Write now</button> <button id="wCopy" style="padding:2px 8px">Copy results</button></div>` : "");
+  if ($("wNow")) { $("wNow").onclick = () => send("soWriteNow"); $("wCopy").onclick = () => navigator.clipboard.writeText("Row\tOrder\tStatus\n" + s.writes.map((w) => `${w.row}\t${w.order}\t${w.value}`).join("\n")); }
   // failed list
   const f = s && s.failed || [];
   $("soProbs").classList.toggle("hide", !f.length);
   if (f.length) {
-    $("soProbs").innerHTML = `<b>${f.length} order(s) need a look</b> <button id="cpF">Copy list</button><div class="pl">${f.map((x) => esc(`row ${x.row}\t${x.order}\t${x.msg}`)).join("\n")}</div>`;
+    $("soProbs").innerHTML = `<b>${f.length} order(s) need a look</b> <button id="cpF">Copy list</button><div class="pl">${f.map((x) => `<div class="lnk" data-row="${x.row}" title="Click: show this row in the sheet">${esc(`row ${x.row}\t${x.order}\t${x.msg}`)}</div>`).join("")}</div>`;
     $("cpF").onclick = () => navigator.clipboard.writeText("Row\tOrder\tProblem\n" + f.map((x) => `${x.row}\t${x.order}\t${x.msg}`).join("\n"));
   }
-  $("soAlert").classList.toggle("hide", !(s && s.dry && running));
-  $("soAlert").textContent = "🧪 TEST RUN — first 5 orders: Complete order is not clicked and nothing is written to the sheet.";
+  $("soAlert").classList.add("hide");
 }
 function bstep(k, st) { const el = document.querySelector(`[data-bstep="${k}"]`); if (el) el.className = "st" + (st ? " " + st : ""); }
 function renderBulk() {
@@ -373,7 +369,7 @@ function detect() {
 function showCols() {
   const man = !!cfg.so.manualCols;
   $("soManual").checked = man;
-  ["soId", "soOrd", "soSt"].forEach((k) => { $(k).disabled = !man; $(k).style.background = man ? "var(--card)" : "var(--soft)"; });
+  ["soId", "soOrd", "soSt"].forEach((k) => { $(k).disabled = !man; $(k).style.background = man ? "var(--card)" : "var(--dis)"; });
   if (man) { $("soId").value = cfg.so.idCol || ""; $("soOrd").value = cfg.so.orderCol || ""; $("soSt").value = cfg.so.statusCol || ""; }
 }
 const colL = (v) => String(v || "").toUpperCase().replace(/[^A-Z]/g, "");
@@ -455,3 +451,27 @@ load().then(async () => { showSheet(); await findOpenSheet(); loadTabs(true); })
     apply(t); try { localStorage.setItem("scbTheme", t); } catch (e) {}
   };
 })();
+
+// ---- click a row -> the sheet jumps to it; click a tab -> that ShipHero tab comes to the front ----
+async function gotoRow(row) {
+  const t = (so && so.target) || {}, ss = t.ss || (curSheet() || {}).url || "";
+  const id = (ss.match(/\/d\/([^/]+)/) || [])[1]; if (!id) return;
+  const opt = [...$("tabSel").options].find((o) => o.value && o.value === (so && so.sheet));
+  const gid = (opt && opt.dataset.gid) || gidOf(ss) || "0";
+  const col = t.orderCol || t.statusCol || "A";
+  const hash = `#gid=${gid}&range=${col}${row}`;
+  try {
+    const tabs = await chrome.tabs.query({ url: `https://docs.google.com/spreadsheets/d/${id}/*` });
+    if (tabs.length) {
+      const tb = tabs.find((x) => x.active) || tabs[0];
+      await chrome.tabs.update(tb.id, { active: true, url: tb.url.split("#")[0] + hash });
+      await chrome.windows.update(tb.windowId, { focused: true });
+    } else await chrome.tabs.create({ url: `https://docs.google.com/spreadsheets/d/${id}/edit${hash}` });
+  } catch {}
+}
+$("soTabs").addEventListener("click", async (e) => {
+  const r = e.target.closest("[data-row]"); if (r) return gotoRow(r.dataset.row);
+  const d = e.target.closest("[data-tab]"); if (!d) return;
+  try { const tb = await chrome.tabs.update(+d.dataset.tab, { active: true }); await chrome.windows.update(tb.windowId, { focused: true }); } catch {}
+});
+$("soProbs").addEventListener("click", (e) => { const r = e.target.closest("[data-row]"); if (r) gotoRow(r.dataset.row); });

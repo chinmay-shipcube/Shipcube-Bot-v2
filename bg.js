@@ -330,9 +330,12 @@ async function soStart(fresh, openSheet, test, speed) {
   log(`Sheet “${r.file || ""}${r.file ? " › " : ""}${r.sheet}”: Order Id ${tgt.idCol || "—"} · Order Number ${tgt.orderCol} · Status ${tgt.statusCol}`, "muted");
   let items = r.items || [];
   const total = items.length;
-  if (so.skipDone) items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
+  if (so.check === "blank") items = items.filter((x) => !String(x.status).trim());
+  else if (so.check === "error") items = items.filter((x) => /^error/i.test(String(x.status).trim()));
+  else if (so.skipDone) items = items.filter((x) => !/^(completed?|already ful+fill?ed)$/i.test(String(x.status).trim()));
   const skipped = total - items.length;
   if (test) items = items.slice(0, 5);          // 🧪 Test run: the first 5 orders only
+  if (so.reverse) items = items.slice().reverse();          // ⇅ Reverse: bottom to top
   const bad = items.filter((x) => x.sci && !x.id);
   items = items.filter((x) => !(x.sci && !x.id));
   if (bad.length) log(`Rows ${bad.map((x) => x.row).join(", ")}: the Order Number shows as 5.78E+17 (lost digits) and there's no Order Id — skipped. Format that column as Plain text.`, "warn");
@@ -360,9 +363,12 @@ async function soRetryFailed() {
 async function soOpenWorkers() {
   const c = await getCfg();
   const s = await getSO(); if (!s || !s.running) return;
-  const want = Math.min(s.conc, soLeft(s)) - Object.keys(s.active).length - (s.idle || []).length;
-  const idle = s.idle || []; s.idle = []; await setSO(s);
-  for (const id of idle) await soAssign(id);
+  const room = Math.min(s.conc, soLeft(s)) - Object.keys(s.active).length;
+  const all = s.idle || [], use = all.slice(0, Math.max(0, room)), extra = all.slice(use.length);
+  const want = room - use.length;
+  s.idle = []; await setSO(s);
+  for (const id of extra) chrome.tabs.remove(id).catch(() => {});      // speed was lowered: the extra waiting tabs close
+  for (const id of use) await soAssign(id);
   for (let i = 0; i < want; i++) { await soAssign(null, c.ownWindow); await new Promise((r) => setTimeout(r, 400)); }
 }
 function soNextItem(s) {
@@ -386,6 +392,7 @@ async function soAssign(tabId, own) {
     delete s.active[tabId];
     if (!s.running) { await setSO(s); return; }
     if (s.paused) { if (!s.idle.includes(tabId)) s.idle.push(tabId); await setSO(s); return; }
+    if (Object.keys(s.active).length >= s.conc) { close = true; await setSO(s); return; }   // speed lowered while running
     const it = soNextItem(s);
     if (!it) { close = true; await setSO(s); return; }
     const via = it.id && !it.searched ? "direct" : "search";
@@ -552,14 +559,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (op === "soRetry") { sendResponse({ ok: true }); soRetryFailed(); return; }
     if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh || !!msg.test, msg.openSheet || "", !!msg.test, msg.speed); return; }
     if (op === "soPause") { await locked(async () => { const s = await getSO(); if (s) { s.paused = true; await setSO(s); } }); log("⏸ Paused — tabs finish the order they're on, then wait.", "warn"); sendResponse({ ok: true }); return; }
-    if (op === "soResume") { await locked(async () => { const s = await getSO(); if (s) { s.paused = false; await setSO(s); } }); log("▶ Resumed", "ok"); sendResponse({ ok: true }); soOpenWorkers(); return; }
+    if (op === "soSpeed") {                       // speed changed while running / paused: more tabs open now, fewer as tabs finish
+      const n = Math.max(1, Math.min(10, +msg.speed || 4)); let go = false;
+      await locked(async () => { const s = await getSO(); if (s && s.running && s.conc !== n) { s.conc = n; go = !s.paused; await setSO(s); log(`Speed ${n}× — ${n} tab${n > 1 ? "s" : ""} at once`, "ok"); } });
+      sendResponse({ ok: true }); if (go) soOpenWorkers(); return;
+    }
+    if (op === "soResume") { await locked(async () => { const s = await getSO(); if (s) { s.paused = false; if (msg.speed) s.conc = Math.max(1, Math.min(10, +msg.speed)); await setSO(s); } }); log("▶ Resumed", "ok"); sendResponse({ ok: true }); soOpenWorkers(); return; }
     if (op === "soStop") {
+      let ids = [];
       await locked(async () => {
         const s = await getSO(); if (!s) return;
+        ids = Object.keys(s.active).filter((k) => k !== "new").map(Number).concat(s.idle || []);
         Object.values(s.active).forEach((x) => s.retry.unshift(x.item));
-        s.active = {}; s.running = false; s.paused = false; await setSO(s);
+        s.active = {}; s.idle = []; s.running = false; s.paused = false; await setSO(s);
       });
-      log("■ Stopped. Orders not finished stay in the queue — ▶ Continue carries on.", "warn");
+      for (const id of ids) chrome.tabs.remove(id).catch(() => {});                // Stop closes the bot's tabs…
+      setTimeout(closeBotWindowIfEmpty, 1500);                                       // …and its window
+      log("■ Stopped — tabs closed. Orders not finished stay in the queue — ▶ Continue carries on.", "warn");
       soFlush(); sendResponse({ ok: true }); return;
     }
     if (op === "bulkStart") {

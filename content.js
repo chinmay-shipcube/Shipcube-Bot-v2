@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.5.2";
+  const VERSION = "2.6.0";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];

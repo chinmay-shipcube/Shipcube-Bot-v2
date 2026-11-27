@@ -40,6 +40,7 @@
   textarea{width:100%;font-family:Consolas,monospace}
   .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--soft)}
   .seg button{border:0;border-radius:0;padding:8px 14px;background:transparent;flex:1;color:var(--mute)}
+  button#revBtn.on{background:#1E8E5A;border-color:#1E8E5A;color:#fff}
   .seg button.on{background:var(--card);color:var(--blue);box-shadow:inset 0 -2px 0 var(--blue)}
   .lbl{font-size:11px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
   .range input{width:64px;text-align:center;font-weight:600}
@@ -114,6 +115,9 @@
     <div class="row range" style="margin-top:4px">From <input id="from" inputmode="numeric" placeholder="first"> to <input id="to" inputmode="numeric" placeholder="last">
       <span class="muted">or</span> <input id="count" inputmode="numeric" placeholder="all" title="How many rows from the From row (e.g. From 850 + 50 rows = rows 850–899)"> <span class="muted">rows</span></div>
     <div class="hint" id="rangeHint" style="margin-top:3px"></div>
+    <div class="row" style="margin-top:8px;gap:6px"><span class="lbl" style="margin:0;width:64px">Check</span>
+      <select id="checkSel" style="flex:1;min-width:0" title="Which rows to do, by what their Status says"><option value="all">All rows (skip finished ones if ticked below)</option><option value="blank">Only blank Status</option><option value="error">Only rows that say Error</option></select>
+      <button id="revBtn" title="Reverse: go from the bottom row up to the top" style="padding:4px 9px">⇅ Reverse</button></div>
     <label style="margin-top:8px;font-size:12px" title="Rows whose Status already says Completed are not opened again"><input type="checkbox" id="skipDone"> Skip rows already “Completed” / “Already Fulfilled”</label>
     <label style="margin-top:4px;font-size:12px" title="The bot's ShipHero tabs open in a separate Chrome window, so you can keep working in yours. Don't close it while the bot runs."><input type="checkbox" id="ownWin"> Bot tabs in their own window</label>
     <div class="row" style="margin-top:10px">

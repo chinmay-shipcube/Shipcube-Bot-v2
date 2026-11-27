@@ -16,7 +16,7 @@ function fillMain() {
   $("bulkSpeed").value = String(cfg.bulkSpeed || 2);
   $("from").value = cfg.so.from || ""; $("to").value = cfg.so.to || "";
   rangeHint(); cliMain(); showCols();
-  $("skipDone").checked = cfg.so.skipDone !== false;
+  $("skipDone").checked = cfg.so.skipDone !== false; $("checkSel").value = cfg.so.check || "all"; $("revBtn").classList.toggle("on", !!cfg.so.reverse);
 
   $("ownWin").checked = cfg.ownWindow !== false;
   showSheet();
@@ -87,7 +87,7 @@ $("sheetSave").onclick = async () => {
   } else $("sheetOut").innerHTML = `<span class="bad">${esc(r.error)}</span>`;
   showSheet(); loadTabs(true);
 };
-$("speed").onchange = () => { cfg.speed = +$("speed").value; saveSoon(); };
+$("speed").onchange = () => { cfg.speed = +$("speed").value; saveSoon(); if (so && so.running) send("soSpeed", { speed: cfg.speed }); };
 $("bulkSpeed").onchange = () => { cfg.bulkSpeed = +$("bulkSpeed").value; saveSoon(); };
 function rangeHint() {
   const f = parseInt(cfg.so.from, 10), t = parseInt(cfg.so.to, 10);
@@ -107,6 +107,8 @@ $("count").oninput = () => {
   if (!cfg.so.from && n) { cfg.so.from = "1"; $("from").value = "1"; }
   cfg.so.to = n ? String(f + n - 1) : ""; $("to").value = cfg.so.to; rangeHint(); saveSoon();
 };
+$("checkSel").onchange = () => { cfg.so.check = $("checkSel").value; saveSoon(); };
+$("revBtn").onclick = () => { cfg.so.reverse = !cfg.so.reverse; $("revBtn").classList.toggle("on", cfg.so.reverse); saveSoon(); };
 $("skipDone").onchange = () => { cfg.so.skipDone = $("skipDone").checked; saveSoon(); };
 $("soRetry").onclick = async () => { if (so && so.running) return; syncMain(); await saveCfg(); send("soRetry"); };
 $("soTest").onclick = async () => {        // test run: first 5 orders, no Complete order, nothing written
@@ -196,7 +198,7 @@ $("testSo").onclick = async () => {
 function syncMain() {
   cfg.speed = +$("speed").value || 4; cfg.bulkSpeed = +$("bulkSpeed").value || 2;
   cfg.so.from = $("from").value.replace(/\D/g, ""); cfg.so.to = $("to").value.replace(/\D/g, "");
-  cfg.so.skipDone = $("skipDone").checked; cfg.ownWindow = $("ownWin").checked;
+  cfg.so.skipDone = $("skipDone").checked; cfg.so.check = $("checkSel").value; cfg.ownWindow = $("ownWin").checked;
   if ($("cliMain").value) cfg.so.client = $("cliMain").value;
   cfg.so.manualCols = $("soManual").checked;
   if (cfg.so.manualCols) { cfg.so.idCol = colL($("soId").value); cfg.so.orderCol = colL($("soOrd").value); cfg.so.statusCol = colL($("soSt").value); }
@@ -212,13 +214,13 @@ document.querySelectorAll("#modeSeg button").forEach((b) => (b.onclick = () => s
 
 // ---------------- buttons ----------------
 $("soStart").onclick = async () => {
-  if (so && so.running && so.paused) return send("soResume");
+  if (so && so.running && so.paused) { syncMain(); return send("soResume", { speed: cfg.speed }); }
   await findOpenSheet();
   if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
   syncMain(); await saveCfg(); send("soStart", { fresh: false, openSheet: curSheet().url, speed: cfg.speed });
 };
 $("soFresh").onclick = async () => { if (so && so.running) return; await findOpenSheet(); syncMain(); await saveCfg(); send("soStart", { fresh: true, openSheet: (curSheet() || {}).url || "", speed: cfg.speed }); };
-$("soPause").onclick = () => send(so && so.paused ? "soResume" : "soPause");
+$("soPause").onclick = () => { if (so && so.paused) { syncMain(); send("soResume", { speed: cfg.speed }); } else send("soPause"); };
 $("soStop").onclick = () => send("soStop");
 $("bGen").onclick = async () => { syncMain(); await saveCfg(); send("bulkStart", { mode: "gen" }); };
 $("bDl").onclick = async () => { syncMain(); await saveCfg(); send("bulkStart", { mode: "dl" }); };
@@ -240,7 +242,7 @@ function renderSO() {
   $("sWritten").textContent = s ? s.written : 0;
   const running = !!(s && s.running);
   $("soStart").textContent = running && s.paused ? "▶ Resume" : (!running && s && left > 0 ? "▶ Continue" : "▶ Start");
-  $("soStart").disabled = running && !s.paused;
+  $("soStart").classList.toggle("hide", running);          // while running (or paused) only Pause/Resume + Stop show
   $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
   $("soStop").disabled = !running; $("soFresh").disabled = running; $("soTest").disabled = running;
   const nf = s && !running ? (s.failed || []).filter((f) => f.item).length : 0;          // ↻ Retry failed after a run

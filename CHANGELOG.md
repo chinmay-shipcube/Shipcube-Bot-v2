@@ -4,6 +4,7 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.6.0 | One Resume button (Start hides while running). Change the speed any time: while paused then ▶ Resume opens that many tabs; while running more tabs open at once, fewer as tabs finish. ■ Stop closes the bot tabs and window. New: Check (All rows / Only blank / Only Error) and ⇅ Reverse, like the Tracking Bot.
 | 2.5.2 | Dark theme: 🌙 / ☀️ button in the side panel header (remembered; first time follows your computer).
 | 2.5.1 | Columns moved out of Settings onto the main view (above Sheet rows): found automatically, or tick “Set them myself”. |
 | 2.5.0 | Completed orders always reach the sheet (no endless wait on Google, pending rows written even after a run). Box chosen patiently (no false “not in box list”, works in small/minimised windows). “##” order-number mismatch fixed; search uses one # (none for 577…). Already-shipped orders opened by Order Id → checked on Single Orders → Already Fulfilled. ↻ Retry failed button. Speed = exactly what the panel shows. No more “not a Kitsch order” check (sheets are already sorted by client). |

@@ -217,6 +217,17 @@ async function newTab(url, own) {
   chrome.tabs.update(id, { autoDiscardable: false }).catch(() => {});   // Chrome must not put the tab to sleep
   return id;
 }
+// "run finished": a Chrome notification + a sound (the sound is played from a tiny offscreen page)
+async function notifyDone(title, text, test) {
+  const c = await getCfg();
+  try { chrome.notifications.create("done" + Date.now(), { type: "basic", iconUrl: "icon128.png", title, message: text, priority: 2, requireInteraction: false }); } catch {}      // the notification is always shown
+  if (c.sound === false) return;
+  try {
+    if (!(await chrome.offscreen.hasDocument())) await chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["AUDIO_PLAYBACK"], justification: "Play a sound when a run finishes" });
+    setTimeout(() => chrome.offscreen.closeDocument().catch(() => {}), 30000);      // safety: close it even if the sound never ends
+  } catch {}
+}
+chrome.runtime.onMessage.addListener((m) => { if (m && m.type === "offscreenDone") chrome.offscreen.closeDocument().catch(() => {}); });
 async function closeBotWindowNow() {
   const w = (await S.get("win")).win || {};
   if (!w.id) return;
@@ -254,6 +265,7 @@ async function openNext() {
     if (!Object.keys(q.active).length && q.i >= q.items.length) {
       q.running = false; q.finishedAt = Date.now();
       log(`Bulk ${q.mode === "dl" ? "download" : "generate"} finished ✓ (${q.items.length} link${q.items.length === 1 ? "" : "s"})`, "ok");
+      notifyDone("ShipCube Bot — Bulk Ship finished ✓", `${q.mode === "dl" ? "Download" : "Generate"}: ${q.items.length} link${q.items.length === 1 ? "" : "s"} done`);
       setTimeout(closeBotWindowIfEmpty, 4000);
     }
     await setQ(q);
@@ -347,7 +359,7 @@ async function soStart(fresh, openSheet, test, speed, check, sig) {
   let s = await getSO();
   if (!fresh && s && s.items && soLeft(s) > 0 && !s.running) {        // ▶ Continue
     s.running = true; s.paused = false; s.conc = Math.max(1, Math.min(10, +c.speed || 4));
-    await setSO(s); log(`Single orders: continuing — ${soLeft(s)} order(s) left`, "ok");
+    await setSO(s); soFlush(true);                  // Continue also tries the waiting results again at once log(`Single orders: continuing — ${soLeft(s)} order(s) left`, "ok");
     return soOpenWorkers();
   }
   const tgt = soTarget(c, openSheet);
@@ -414,7 +426,7 @@ function soNextItem(s) {
 }
 // give this tab its next order (or close it when there's nothing left)
 async function soAssign(tabId, own) {
-  let nav = null, close = false, entry = null;
+  let nav = null, close = false, entry = null, wait = 0;
   await locked(async () => {
     const s = await getSO(); if (!s) return;
     if (tabId == null) {          // a new tab: pick its order first, then open the tab right on it
@@ -432,7 +444,7 @@ async function soAssign(tabId, own) {
     if (!it) { close = true; await setSO(s); return; }
     const via = it.id && !it.searched ? "direct" : "search";
     s.active[tabId] = { item: it, via, at: Date.now(), beat: Date.now(), reloads: 0 };
-    nav = soUrl(it, via);
+    nav = soUrl(it, via); wait = Math.max(0, (it.notBefore || 0) - Date.now());
     await setSO(s);
   });
   if (entry) {
@@ -440,13 +452,21 @@ async function soAssign(tabId, own) {
     await locked(async () => { const s = await getSO(); delete s.active["new"]; s.active[id] = entry; await setSO(s); });
     return;
   }
-  if (nav) { try { await chrome.tabs.update(tabId, { url: nav }); } catch { soTabGone(tabId); } }
+  if (nav) {
+    if (wait) await new Promise((r) => setTimeout(r, Math.min(wait, 60000)));        // a locked order is tried again only after a pause
+    try { await chrome.tabs.update(tabId, { url: nav }); } catch { soTabGone(tabId); }
+  }
   if (close) { chrome.tabs.remove(tabId).catch(() => {}); soCheckFinish(); }
 }
 // "Error (reason)" for the Status cell - short, without the bot's extra words
 function errText(word, msg) {
   const r = String(msg || "").replace(/\s*—\s*(left as is|please (check|do it by hand).*|check this order)$/i, "").replace(/[“”"]/g, "").replace(/'s box list/, " box list").trim().slice(0, 90);
   return r ? `${word} (${r})` : word;
+}
+function skuErrOf(t) {                       // "We can't seem to allocate 505954" → "error sku - 505954" (several SKUs are joined with a comma)
+  const m = String(t || "").match(/allocate\s+([A-Za-z0-9][\w\-.\/]*)/gi); if (!m) return "";
+  const u = []; m.forEach((x) => { const k = x.replace(/^allocate\s+/i, ""); if (u.indexOf(k) < 0) u.push(k); });
+  return "error sku - " + u.join(", ");
 }
 async function soResult(tabId, res) {
   let wroteNow = false;
@@ -464,11 +484,15 @@ async function soResult(tabId, res) {
     else if (res.ok) {
       s.ok++; s.writes.push({ row: it.row, order: it.order, value: (res.value || "Completed") });
       log(`${tag}: completed ✓ — ${res.qty} unit(s) → ${res.box}${res.why ? ` (“${res.why}” rule)` : ""}`, "ok"); wroteNow = s.writes.length >= 15;
+    } else if (/locked by another user/i.test(res.msg || "") && (it.lock || 0) < 3) {        // somebody else has the order open: try again later (up to 3 times, 45 s apart)
+      it.lock = (it.lock || 0) + 1; it.notBefore = Date.now() + 45000; s.retry.push(it);
+      log(`${tag}: locked by another user — will try again later (${it.lock}/3)`, "warn");
     } else if (res.search && it.id && !it.searched) {         // the direct link didn't open it: search for it instead
       it.searched = true; it.now = true; s.retry.unshift(it); log(`${tag}: ${res.msg} — trying the Single Orders search`, "muted");
     } else if (res.retry && !it.tries) {
       it.tries = 1; s.retry.push(it); log(`${tag}: ${res.msg} — will try again at the end`, "warn");
     } else {
+      { const sk = skuErrOf(res.detail || res.msg); if (sk) { res.msg = sk; if (res.detail) res.detail = sk; } }   // "We can't seem to allocate 505954" → "error sku - 505954"
       s.fail++; s.failed.push({ row: it.row, order: it.order, msg: res.msg, item: Object.assign({}, it, { tries: 0, searched: false, now: false }) }); log(`${tag}: ✗ ${res.msg}${s.dry ? " (test run — nothing written)" : " — not completed in ShipHero, written in the sheet (red)"}`, "bad");
       if (!s.dry) s.writes.push(res.detail ? { row: it.row, order: it.order, value: String(res.detail).slice(0, 200), red: true }   // ShipHero's own details, e.g. "The order is on hold"
                                            : { row: it.row, order: it.order, value: errText(s.errValue || "Error", res.msg) });
@@ -487,9 +511,10 @@ async function soFlush(force) {
   clearTimeout(flushT); flushT = null;
   flushing = true;
   try {
-    const s = await getSO(); if (!s || !s.writes.length || s.wstuck) return;
+    const s = await getSO(); if (!s || !s.writes.length) return;
+    if (s.wstuck && Date.now() - (s.wlast || 0) < 60000) return;          // gave up for now - tries again once a minute (▶ Continue / Write now try at once)
     const c = await getCfg(); const so = c.so;
-    const batch = s.writes.slice(0, s.wb || 200);
+    const batch = s.writes.slice(0, s.wb || 60);
     const t = s.target || soTarget(c);
     const r = await sheetPost(so.url || c.url, so.token || c.token, { action: "soWrite", ss: t.ss, tab: t.tab, orderCol: t.orderCol, statusCol: t.statusCol, writes: batch });
     await locked(async () => {
@@ -500,8 +525,8 @@ async function soFlush(force) {
         log(`Sheet ✓ ${r.written} row(s) written (${nOk} “${so.value || "Completed"}”${nAl ? `, ${nAl} “${so.alreadyValue || "Already Fulfilled"}”` : ""}${nErr ? `, ${nErr} error${nErr > 1 ? "s" : ""} (red)` : ""})${r.moved && r.moved.length ? ` (moved rows found: ${r.moved.join(", ")})` : ""}`, "ok");
         if (r.missing && r.missing.length) log(`Sheet: order(s) not found in the column any more: ${r.missing.join(", ")}`, "warn");
       } else {
-        s2.wfail = (s2.wfail || 0) + 1; s2.werr = String(r.error || "no answer").slice(0, 120);
-        if (s2.wfail % 3 === 0) s2.wb = Math.max(20, Math.floor((s2.wb || 200) / 2));          // a smaller batch is easier for a slow sheet
+        s2.wlast = Date.now(); s2.wfail = (s2.wfail || 0) + 1; s2.werr = String(r.error || "no answer").slice(0, 120);
+        if (s2.wfail % 3 === 0) s2.wb = Math.max(20, Math.floor((s2.wb || 60) / 2));          // a smaller batch is easier for a slow sheet
         if (s2.wfail >= 10) { s2.wstuck = true; log(`Sheet ✗ ${s2.writes.length} result(s) could NOT be written after ${s2.wfail} tries (${s2.werr}). Press “Write now” to try again, or “Copy results” and paste them yourself.`, "bad"); }
         else log(`Sheet ✗ ${s2.werr} — try ${s2.wfail}, will retry`, "bad");
       }
@@ -522,6 +547,7 @@ async function soCheckFinish() {
   log(`Single orders finished ✓ ${s.ok} completed${s.already ? ` (${s.already} already fulfilled)` : ""}${s.dryOk ? `, ${s.dryOk} test ok` : ""}, ${s.fail} failed · ${mins} min`, s.fail ? "warn" : "ok");
   if (s.failed.length) log(`Failed rows: ${s.failed.map((f) => f.row).join(", ")}`, "bad");
   for (const id of s.idle || []) chrome.tabs.remove(id).catch(() => {});
+  notifyDone("ShipCube Bot — run finished ✓", `${s.ok} completed${s.already ? ` (${s.already} already fulfilled)` : ""}, ${s.fail} failed · ${mins} min`);
   setTimeout(closeBotWindowNow, 2500);                       // the run is over: the bot's tabs and window close by themselves
 }
 async function soTabGone(tabId) {
@@ -538,7 +564,7 @@ async function soTabGone(tabId) {
 chrome.alarms.onAlarm.addListener(async (a) => {
   if (a.name !== "wd") return;
   const s = await getSO(); if (!s) return;
-  if (s.writes && s.writes.length && !s.wstuck) soFlushSoon();          // results still waiting for the sheet - also after a run
+  if (s.writes && s.writes.length) soFlushSoon();          // results still waiting for the sheet - also after a run
   if (!s.running) return;
   if (soLeft(s) === 0) soCheckFinish();                   // safety net: nothing left, nothing working -> finish
   const now = Date.now();
@@ -552,7 +578,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
       soResult(+id, { ok: false, retry: true, msg: "page stuck (reloaded twice)" });
     }
   }
-  if (s.writes.length && !s.wstuck) soFlushSoon();
+  if (s.writes.length) soFlushSoon();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -601,6 +627,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         : Object.assign({ action: "soRead", from, to: Math.min(to, from + 200) }, t)));
       return;
     }
+    if (op === "testNotify") { sendResponse({ ok: true }); notifyDone("ShipCube Bot — test notification", "This is how it looks when a run finishes.", true); return; }
+    if (op === "stopSound") { sendResponse({ ok: true }); chrome.offscreen.closeDocument().catch(() => {}); return; }
     if (op === "soWriteNow") { sendResponse({ ok: true }); soFlush(true); return; }
     if (op === "soRetry") { sendResponse({ ok: true }); soRetryFailed(); return; }
     if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh, msg.openSheet || "", false, msg.speed, msg.check, msg.sig); return; }
@@ -610,7 +638,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await locked(async () => { const s = await getSO(); if (s && s.running && s.conc !== n) { s.conc = n; go = !s.paused; await setSO(s); log(`Speed ${n}× — ${n} tab${n > 1 ? "s" : ""} at once`, "ok"); } });
       sendResponse({ ok: true }); if (go) soOpenWorkers(); return;
     }
-    if (op === "soResume") { await locked(async () => { const s = await getSO(); if (s) { s.paused = false; if (msg.speed) s.conc = Math.max(1, Math.min(10, +msg.speed)); await setSO(s); } }); log("▶ Resumed", "ok"); sendResponse({ ok: true }); soOpenWorkers(); return; }
+    if (op === "soResume") { await locked(async () => { const s = await getSO(); if (s) { s.paused = false; s.wstuck = false; s.wfail = 0; if (msg.speed) s.conc = Math.max(1, Math.min(10, +msg.speed)); await setSO(s); } }); log("▶ Resumed", "ok"); sendResponse({ ok: true }); soOpenWorkers(); return; }
     if (op === "soStop") {
       let ids = [];
       await locked(async () => {

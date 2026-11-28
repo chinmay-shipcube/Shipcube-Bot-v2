@@ -4,6 +4,13 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.9.6 | Allocation errors: "We can't seem to allocate 505954" is now written in Status as just "error sku - 505954" (several SKUs joined with commas). New "Copy SKUs" button in the "need a look" list copies only the SKUs, one per line. |
+| 2.9.5 | “The order is locked by another user”: the order is no longer marked as failed at once - it goes to the end of the queue and is tried again after 45 s, up to 3 times; only then it is written as an error.
+| 2.9.4 | The “run finished” notification always shows (no option); ⚙ Settings › Sound only has the Play the sound tick, Test and Stop sound.
+| 2.9.3 | ▶ Continue / Resume now also retry the waiting results at once, and a run that gave up writing retries every minute by itself (it no longer stays blocked until “Write now”).
+| 2.9.2 | Sheet writes are much faster: sheet script v13 writes 66 rows with ~9 calls instead of ~270 (it was timing out at 60 s and piling up). A busy script answers “busy” instead of Google's error page; the bot sends smaller batches (60). Update the Apps Script (paste + New version).
+| 2.9.1 | ⚙ Settings › Notification & sound: tick Show notification / Play the sound separately, 🔔 Test notification and ■ Stop sound buttons.
+| 2.9.0 | Notification + sound (done.mp3) when a Single orders or Bulk Ship run finishes; tick box “🔔 Notification + sound when a run finishes” (on by default). Needs the new notifications + offscreen permissions.
 | 2.8.4 | An unfinished run saved by an older version now offers ▶ Start (new run) instead of ▶ Continue, so it can no longer carry on with old columns.
 | 2.8.3 | Changed rows / columns / sheet / subsheet / client / check while paused or stopped → the button says ▶ Start (a NEW run with the new settings; the old run ends and its results are written first) instead of Resume / Continue. Changing only the speed keeps Resume.
 | 2.8.2 | Red banner “Error printing … [Details]”: the bot clicks Details, copies the “Error details” text (e.g. Variable $data … shipping_carrier), closes it and writes that text in Status (red).

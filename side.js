@@ -123,6 +123,7 @@ function openSettings() {
 
   $("soVal").value = s.value || "Completed"; $("soErr").value = s.errValue || "Error"; $("soAl").value = s.alreadyValue || "Already Fulfilled";
   $("soUrl").value = s.url || ""; $("soToken").value = s.token || "";
+  $("soundS").checked = cfg.sound !== false;
   cliEdit = Math.max(0, clients().findIndex((c) => c.name === cfg.so.client)); cliShow();
   $("saveOut").textContent = ""; $("testSoOut").textContent = ""; $("testBulkOut").textContent = "";
 }
@@ -240,6 +241,7 @@ $("copyLog").onclick = () => navigator.clipboard.writeText(logs.map((l) => `${ne
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 function step(k, st) { const el = document.querySelector(`[data-step="${k}"]`); if (el) el.className = "st" + (st ? " " + st : ""); }
 const STAGE = { load: "loading", search: "searching", open: "opening", pack: "packing items", box: "choosing box", complete: "completing" };
+let soProbsHtml = "";
 function renderSO() {
   const s = so;
   const left = s ? (s.items.length - s.pos) + (s.retry || []).length : 0;
@@ -271,9 +273,16 @@ function renderSO() {
   const f = s && s.failed || [];
   $("soProbs").classList.toggle("hide", !f.length);
   if (f.length) {
-    $("soProbs").innerHTML = `<b>${f.length} order(s) need a look</b> <button id="cpF">Copy list</button><div class="pl">${f.map((x) => `<div class="lnk" data-row="${x.row}" title="Click: show this row in the sheet">${esc(`row ${x.row}\t${x.order}\t${x.msg}`)}</div>`).join("")}</div>`;
-    $("cpF").onclick = () => navigator.clipboard.writeText("Row\tOrder\tProblem\n" + f.map((x) => `${x.row}\t${x.order}\t${x.msg}`).join("\n"));
-  }
+    const show = (x) => { const m = /^error sku - (.*)$/.exec(x.msg || ""); return m ? m[1] : x.msg; };   // SKU errors: show just the SKU(s), easy to copy
+    const html = `<b>${f.length} order(s) need a look</b> <button id="cpF">Copy list</button>${f.some((x) => /^error sku - /.test(x.msg || "")) ? ` <button id="cpSku">Copy SKUs</button>` : ""}<div class="pl">${f.map((x) => `<div class="lnk" data-row="${x.row}" title="Click: show this row in the sheet">${esc(`row ${x.row}\t${x.order}\t${show(x)}`)}</div>`).join("")}</div>`;
+    if (html !== soProbsHtml) {                      // only redraw when the list really changed, and keep the scroll position (it jumped back to the left during a run)
+      const old = $("soProbs").querySelector(".pl"), sl = old ? old.scrollLeft : 0, st = old ? old.scrollTop : 0;
+      $("soProbs").innerHTML = html; soProbsHtml = html;
+      const nw = $("soProbs").querySelector(".pl"); if (nw) { nw.scrollLeft = sl; nw.scrollTop = st; }
+    }
+    $("cpF").onclick = () => navigator.clipboard.writeText("Row\tOrder\tProblem\n" + f.map((x) => `${x.row}\t${x.order}\t${show(x)}`).join("\n"));
+    if ($("cpSku")) $("cpSku").onclick = () => { const u = []; f.forEach((x) => { const m = /^error sku - (.*)$/.exec(x.msg || ""); if (m) m[1].split(/,\s*/).forEach((k) => { if (k && u.indexOf(k) < 0) u.push(k); }); }); navigator.clipboard.writeText(u.join("\n")); };
+  } else soProbsHtml = "";
   $("soAlert").classList.add("hide");
 }
 function bstep(k, st) { const el = document.querySelector(`[data-bstep="${k}"]`); if (el) el.className = "st" + (st ? " " + st : ""); }
@@ -491,3 +500,8 @@ $("soProbs").addEventListener("click", (e) => { const r = e.target.closest("[dat
 
 // changing a setting re-checks whether the buttons should say Start (new run) or Resume / Continue (same run)
 ["input", "change", "click"].forEach((ev) => $("soView").addEventListener(ev, () => setTimeout(() => { try { renderSO(); } catch (e) {} }, 60)));
+
+// ---- notification & sound settings ----
+$("soundS").onchange = () => { cfg.sound = $("soundS").checked; saveSoon(); };
+$("testNotify").onclick = async () => { cfg.sound = $("soundS").checked; await saveCfg(); $("notifyOut").textContent = "✓ sent"; send("testNotify"); setTimeout(() => ($("notifyOut").textContent = ""), 3000); };
+$("stopSound").onclick = () => send("stopSound");

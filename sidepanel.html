@@ -226,6 +226,12 @@
     <div class="hint" id="testSoOut" style="white-space:pre-wrap;margin-top:4px"></div>
   </div>
   <div class="set">
+    <h4>Sound (when a run finishes)</h4>
+    <label style="font-size:12px"><input type="checkbox" id="soundS"> 🔊 Play the sound</label>
+    <div class="row" style="margin-top:8px;gap:6px"><button id="testNotify">🔔 Test notification</button><button id="stopSound">■ Stop sound</button><span class="hint" id="notifyOut"></span></div>
+    <div class="hint" style="margin-top:4px">The Chrome notification always shows; only the sound can be switched off. Changes save at once. If no pop-up shows, check Windows Settings › Notifications and Chrome's notification setting.</div>
+  </div>
+  <div class="set">
     <h4>Clients &amp; box rules (Single orders)</h4>
     <div class="row" style="gap:6px"><select id="cliSel" style="flex:1;min-width:0"></select><button id="cliAdd">+ Add client</button><button id="cliDel" title="Delete this client">🗑</button></div>
     <div class="f" style="margin-top:8px"><span>Client name</span><input id="cliName" placeholder="e.g. Kitsch"></div>

@@ -1,5 +1,5 @@
 /**
- * ShipCube Bot -> Google Sheet   (v12 - Single Orders: tab list, columns by heading, only the Status cell turns red on an error and is cleared when fixed)
+ * ShipCube Bot -> Google Sheet   (v13 - fast writes; v12 - Single Orders: tab list, columns by heading, only the Status cell turns red on an error and is cleared when fixed)
  * Paste this whole file into your sheet: Extensions > Apps Script (replace everything), Save,
  * then Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone) and copy the link.
  * Updating an existing deployment: Deploy > Manage deployments > edit > Version: New version > Deploy.
@@ -22,7 +22,7 @@
  *                                   (you can download that file as Excel any time).
  */
 
-const SCRIPT_VERSION = 12;  // the bot shows this in Settings > Test connection
+const SCRIPT_VERSION = 13;  // the bot shows this in Settings > Test connection
 const TOKEN = 'shipcube';   // password - must match "Password" in the bot's Settings > Google Sheet
 const SHEET_NAME = '';      // tab name to write to; leave '' to use the FIRST tab
 
@@ -57,7 +57,7 @@ function pageKey(url) {
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  try { lock.waitLock(25000); } catch (err) { return reply({ ok: false, error: 'the sheet script is busy (another PC is writing) - retrying' }); }
   try {
     const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (data.token !== TOKEN) return reply({ ok: false, error: 'Wrong password (TOKEN)' });
@@ -410,7 +410,7 @@ function singleOrders_(data) {
   const col = sh.getRange(1, oc, Math.max(last, 1), 1).getDisplayValues();
   const where = {};
   for (let i = 0; i < col.length; i++) { const k = soKey_(col[i][0]); if (k && !(k in where)) where[k] = i + 1; }
-  let written = 0; const moved = [], missing = [];
+  const moved = [], missing = [], byRow = {};
   writes.forEach(function (w) {
     let r = parseInt(w.row, 10) || 0;
     const k = soKey_(w.order);
@@ -418,17 +418,30 @@ function singleOrders_(data) {
       if (where[k]) { moved.push(r + '->' + where[k]); r = where[k]; } else { missing.push(w.order); return; }
     }
     if (!r) return;
-    const stCell = sh.getRange(r, sc), ordCell = sh.getRange(r, oc);
-    stCell.setValue(w.value);
-    // "Error (…)" or a ShipHero message -> only the STATUS cell turns red. When the order is fixed (Completed / Already Fulfilled)
-    // the red is removed again. The Order Number cell keeps its own colour (an old red there, from v11, is given back its neighbours' colour).
-    if (w.red || /^error\b/i.test(String(w.value))) {
-      stCell.setBackground(SO_RED);
-    } else {
-      if (String(stCell.getBackground()).toLowerCase() === SO_RED) stCell.setBackground(null);
-      if (String(ordCell.getBackground()).toLowerCase() === SO_RED) { const old = soBack_(sh, r, oc); ordCell.setBackground(old && old !== SO_RED ? old : null); }
-    }
-    written++;
+    byRow[r] = { v: w.value, red: !!(w.red || /^error\b/i.test(String(w.value))) };       // the last write for a row wins
   });
+  const rows = Object.keys(byRow).map(Number).sort(function (a, b) { return a - b; });
+  if (!rows.length) return { ok: true, written: 0, moved: moved, missing: missing };
+  // FAST: values in blocks of neighbouring rows (one call each), colours read once and changed with range lists
+  for (let a = 0; a < rows.length;) {
+    let b = a; while (b + 1 < rows.length && rows[b + 1] === rows[b] + 1) b++;
+    const run = rows.slice(a, b + 1);
+    sh.getRange(run[0], sc, run.length, 1).setValues(run.map(function (r) { return [byRow[r].v]; }));
+    a = b + 1;
+  }
+  // Only the STATUS cell turns red on an error; when the order is fixed the red is removed again.
+  // The Order Number keeps its own colour (an old red there, from v11, is given back its neighbours' colour).
+  const lo = rows[0], n = rows[rows.length - 1] - lo + 1;
+  const stBg = sh.getRange(lo, sc, n, 1).getBackgrounds(), ordBg = sh.getRange(lo, oc, n, 1).getBackgrounds();
+  const red = [], clear = [], fixOrd = [];
+  rows.forEach(function (r) {
+    const sb = String(stBg[r - lo][0]).toLowerCase(), ob = String(ordBg[r - lo][0]).toLowerCase();
+    if (byRow[r].red) { if (sb !== SO_RED) red.push(colLetter_(sc) + r); }
+    else { if (sb === SO_RED) clear.push(colLetter_(sc) + r); if (ob === SO_RED) fixOrd.push(r); }
+  });
+  if (red.length) sh.getRangeList(red).setBackground(SO_RED);
+  if (clear.length) sh.getRangeList(clear).setBackground(null);
+  fixOrd.forEach(function (r) { const old = soBack_(sh, r, oc); sh.getRange(r, oc).setBackground(old && old !== SO_RED ? old : null); });
+  const written = rows.length;
   return { ok: true, written: written, moved: moved, missing: missing };
 }

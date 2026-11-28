@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.7.6";
+  const VERSION = "2.8.1";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];
@@ -2657,6 +2657,39 @@
     const r = rules.find((x) => units <= x.max);
     return r ? r.box : null;
   }
+  // ---- product rules (e.g. shampoo / conditioner / brush / a SKU / "Glazey" -> a bigger box) ----
+  // every item row of the page (left AND right): its SKU and its whole text (name, location...)
+  function soItemTexts() {
+    const all = skuLeaves(), out = [];
+    all.forEach((leaf) => {
+      let p = leaf, row = leaf;
+      for (let i = 0; i < 8 && p.parentElement; i++) {
+        p = p.parentElement;
+        if (all.filter((x) => x !== leaf && p.contains(x)).length) break;      // reached another item
+        row = p;
+      }
+      const m = ownText(leaf).match(/sku\s*[:#]?\s*(\S+)/i);
+      out.push({ sku: m ? m[1].toLowerCase() : "", text: (row.innerText || "").replace(/\s+/g, " ").toLowerCase() });
+    });
+    return out;
+  }
+  const boxVol = (b) => { const m = String(b || "").match(/(\d+(?:\.\d+)?)\s*[x*×]\s*(\d+(?:\.\d+)?)\s*[x*×]\s*(\d+(?:\.\d+)?)/i); return m ? m[1] * m[2] * m[3] : 0; };
+  // Kitsch product rules - built in (not editable): words or a SKU => units = box ; * = box
+  const KITSCH_SUB = "shampoo, conditioner => 3 = 12x6x4 Box ; * = 14x10x6 Box\nbrush => 3 = 12x6x4 Box ; * = 14x10x6 Box\n504261 => * = 14x10x6 Box\nglazey => * = 14x10x6 Box";
+  // sub: lines like  "shampoo, conditioner => 3 = 12x6x4 Box ; * = 14x10x6 Box"  (# = switched off). Returns the biggest matching box.
+  function soSubBox(units, sub, items) {
+    let best = null;
+    String(sub || "").split(/\n/).forEach((line) => {
+      line = line.trim(); if (!line || line[0] === "#" || !line.includes("=>")) return;
+      const [kw, rules] = line.split("=>");
+      const keys = kw.split(",").map((k) => k.trim().toLowerCase().replace(/^sku\s*[:#]?\s*/, "")).filter(Boolean);
+      const hit = keys.find((k) => items.some((it) => (/^\d{4,}$/.test(k) ? it.sku === k : it.text.includes(k))));
+      if (!hit) return;
+      const box = soBoxFor(units, rules.split(";").join("\n"));
+      if (box && (!best || boxVol(box) > boxVol(best.box))) best = { box, why: hit };
+    });
+    return best;
+  }
   function boxControl() {
     const lbl = [...document.querySelectorAll("div, span, label, p")].find((el) => visible(el) && /^shipping box$/i.test(ownText(el)) && !el.closest("#shipcube-so"));
     if (!lbl) return null;
@@ -2749,6 +2782,7 @@
 
     // click every item on the left until everything is in the package
     soStage("pack", `row ${it.row} · packing items…`);
+    const seenItems = soItemTexts();                 // names / SKUs while the items are still on the left
     let clicks = 0, stuck = 0;
     for (;;) {
       const s = soSides();
@@ -2773,15 +2807,20 @@
     if (badge && s.rightUnits && !s.rightUnknown && badge !== s.rightUnits) soChip(`package says ${badge}, items add up to ${s.rightUnits} — using ${badge}`);
 
     // box by quantity
-    const box = soBoxFor(units, job.rules);
+    let box = soBoxFor(units, job.rules), why = "";
+    if (/kitsch/i.test(job.client || "")) {          // Kitsch product rules (built in): the bigger box wins
+      const items = seenItems.concat(soItemTexts());
+      const sr = soSubBox(units, KITSCH_SUB, items);
+      if (sr && (!box || boxVol(sr.box) >= boxVol(box))) { box = sr.box; why = sr.why; }
+    }
     if (!box) return soDone({ ok: false, msg: `no box rule for ${units} unit(s) (⚙ Settings → Single orders)` });
-    soStage("box", `row ${it.row} · ${units} unit(s) → ${box}`);
+    soStage("box", `row ${it.row} · ${units} unit(s) → ${box}${why ? ` (“${why}” rule)` : ""}`);
     const bc0 = await waitFor(() => boxControl(), 10000);
     if (!bc0) return soDone({ ok: false, retry: true, msg: "couldn't find the Shipping box dropdown" });
     const pick = await chooseBox(box);                     // (2) patient: ShipHero can load the box list late
     if (!pick.ok) return soDone({ ok: false, retry: !pick.notInList, msg: pick.notInList ? `“${box}” is not in ShipHero's box list` : `couldn't set the box to “${box}” (page slow)` });
 
-    if (job.dry) return soDone({ ok: true, dry: true, qty: units, box });
+    if (job.dry) return soDone({ ok: true, dry: true, qty: units, box, why });
 
     // Complete order (the main part of the button, never the arrow menu)
     const btn = await waitFor(() => { const b = completeBtn(); return b && !b.disabled && b.getAttribute("aria-disabled") !== "true" ? b : null; }, 8000);
@@ -2808,7 +2847,7 @@
     if (out.startsWith("err:")) return soDone({ ok: false, msg: "ShipHero: " + out.slice(4) });
     if (out === "det:") { const det = await readDetailsModal(detailsModal()); return soDone({ ok: false, detail: det, msg: det }); }
     if (out.startsWith("dlg:")) return soDone({ ok: false, msg: "ShipHero asked: " + out.slice(4) });
-    return soDone({ ok: true, qty: units, box, value: job.value });
+    return soDone({ ok: true, qty: units, box, why, value: job.value });
   }
 
   // ---------------- auto-run on batch pages ----------------

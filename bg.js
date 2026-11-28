@@ -460,7 +460,7 @@ async function soResult(tabId, res) {
     } else if (res.ok && res.dry) { s.dryOk++; log(`${tag}: 🧪 test ok — ${res.qty} unit(s) → ${res.box} (Complete not clicked)`, "ok"); }
     else if (res.ok) {
       s.ok++; s.writes.push({ row: it.row, order: it.order, value: (res.value || "Completed") });
-      log(`${tag}: completed ✓ — ${res.qty} unit(s) → ${res.box}`, "ok"); wroteNow = s.writes.length >= 15;
+      log(`${tag}: completed ✓ — ${res.qty} unit(s) → ${res.box}${res.why ? ` (“${res.why}” rule)` : ""}`, "ok"); wroteNow = s.writes.length >= 15;
     } else if (res.search && it.id && !it.searched) {         // the direct link didn't open it: search for it instead
       it.searched = true; it.now = true; s.retry.unshift(it); log(`${tag}: ${res.msg} — trying the Single Orders search`, "muted");
     } else if (res.retry && !it.tries) {

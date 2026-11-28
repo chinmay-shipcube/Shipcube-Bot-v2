@@ -4,6 +4,8 @@ Every change bumps the version in `manifest.json`. The side panel shows the vers
 
 | Version | What changed |
 |---|---|
+| 2.8.1 | Kitsch product rules are built in (no tick box, not editable) and always apply to the Kitsch client.
+| 2.8.0 | Kitsch product rules (tick “Apply product rules” under Client): shampoo / conditioner / brush → 1–3 units 12x6x4 Box, above 3 → 14x10x6 Box; SKU 504261 and “Glazey” → 14x10x6 Box always. Edit them in ⚙ Settings › Clients. The bigger box wins when several rules (or the quantity rule) apply.
 | 2.7.6 | Only the Status cell turns red on an error (not the Order Number); the red is removed when the order is fixed. Sheet script v12 (paste + New version); old red Order Number cells get their neighbours' colour back when fixed.
 | 2.7.5 | The run stops by itself when the rows are done (like the Tracking Bot): bot tabs and window close, a stale “opening” tab can no longer hold it open, and the watchdog finishes a run that has nothing left.
 | 2.7.4 | Test run removed completely (button, first-5 mode and its banner). ▶ Start always really completes orders.

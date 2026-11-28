@@ -209,13 +209,25 @@ function setMode(m) {
 document.querySelectorAll("#modeSeg button").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
 
 // ---------------- buttons ----------------
+// what the run depends on (speed and "own window" are not part of it: changing them keeps ▶ Resume / ▶ Continue)
+function sigNow() {
+  const sh = curSheet();
+  return JSON.stringify([sh ? sh.url : "", $("tabSel").value, $("from").value.trim(), $("to").value.trim(), $("count").value.trim(),
+    $("soManual").checked ? [$("soId").value, $("soOrd").value, $("soSt").value].join(",").toUpperCase() : "",
+    $("errRun").checked ? "error" : $("checkSel").value, !!cfg.so.reverse, $("cliMain").value]);
+}
+const settingsChanged = () => !!(so && !so.sig && !so.running && so.items && so.items.length - so.pos + (so.retry || []).length > 0) ||       // an unfinished run saved by an older version: no way to tell, so a new Start is safer than Continue
+  !!(so && so.sig && (so.running || (so.items && so.items.length - so.pos + (so.retry || []).length > 0)) && so.sig !== sigNow());
 $("soStart").onclick = async () => {
-  if (so && so.running && so.paused) { syncMain(); return send("soResume", { speed: cfg.speed }); }
+  const changed = settingsChanged();
+  if (so && so.running && so.paused && !changed) { syncMain(); return send("soResume", { speed: cfg.speed }); }
   await findOpenSheet();
   if (!curSheet()) { $("soFile").innerHTML = '<span class="bad">Open your Google Sheet in this window first (or + Add its link).</span>'; return; }
-  syncMain(); await saveCfg(); send("soStart", { fresh: false, openSheet: curSheet().url, speed: cfg.speed });
+  syncMain(); await saveCfg();
+  if (changed && so && so.running) await send("soStop");          // changed settings = a NEW run: the paused one is ended (its tabs close)
+  send("soStart", { fresh: changed, openSheet: curSheet().url, speed: cfg.speed, sig: sigNow() });
 };
-$("soFresh").onclick = async () => { if (so && so.running) return; await findOpenSheet(); syncMain(); await saveCfg(); send("soStart", { fresh: true, openSheet: (curSheet() || {}).url || "", speed: cfg.speed }); };
+$("soFresh").onclick = async () => { if (so && so.running) return; await findOpenSheet(); syncMain(); await saveCfg(); send("soStart", { fresh: true, openSheet: (curSheet() || {}).url || "", speed: cfg.speed, sig: sigNow() }); };
 $("soPause").onclick = () => { if (so && so.paused) { syncMain(); send("soResume", { speed: cfg.speed }); } else send("soPause"); };
 $("soStop").onclick = () => send("soStop");
 $("bGen").onclick = async () => { syncMain(); await saveCfg(); send("bulkStart", { mode: "gen" }); };
@@ -237,9 +249,10 @@ function renderSO() {
   $("sLeft").textContent = s ? left + active.length : 0;
   $("sWritten").textContent = s ? s.written : 0;
   const running = !!(s && s.running);
-  $("soStart").textContent = running && s.paused ? "▶ Resume" : (!running && s && left > 0 ? "▶ Continue" : "▶ Start");
-  $("soStart").classList.toggle("hide", running);          // while running (or paused) only Pause/Resume + Stop show
-  $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
+  const chg = settingsChanged();
+  $("soStart").textContent = chg ? "▶ Start" : running && s.paused ? "▶ Resume" : (!running && s && left > 0 ? "▶ Continue" : "▶ Start");
+  $("soStart").classList.toggle("hide", running && !(s.paused && chg));      // paused + settings changed: ▶ Start (new run) replaces ▶ Resume          // while running (or paused) only Pause/Resume + Stop show
+  $("soPause").classList.toggle("hide", !!(running && s.paused && chg)); $("soPause").disabled = !running; $("soPause").textContent = s && s.paused ? "▶ Resume" : "⏸ Pause";
   $("soStop").disabled = !running; $("soFresh").disabled = running;
   const nf = s && !running ? (s.failed || []).filter((f) => f.item).length : 0;          // ↻ Retry failed after a run
   $("soRetry").classList.toggle("hide", !nf); $("soRetry").textContent = `↻ Retry failed (${nf})`;
@@ -475,3 +488,6 @@ $("soTabs").addEventListener("click", async (e) => {
   try { const tb = await chrome.tabs.update(+d.dataset.tab, { active: true }); await chrome.windows.update(tb.windowId, { focused: true }); } catch {}
 });
 $("soProbs").addEventListener("click", (e) => { const r = e.target.closest("[data-row]"); if (r) gotoRow(r.dataset.row); });
+
+// changing a setting re-checks whether the buttons should say Start (new run) or Resume / Continue (same run)
+["input", "change", "click"].forEach((ev) => $("soView").addEventListener(ev, () => setTimeout(() => { try { renderSO(); } catch (e) {} }, 60)));

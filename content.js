@@ -24,7 +24,7 @@
   const SECTION_TITLE = "decide how each individual order will be packed";
   // =============================================================
 
-  const VERSION = "2.8.1";
+  const VERSION = "2.8.4";
   const LS_AUTO = "shipcubeBot.auto";
   const LS_ROWS = "shipcubeBot.rows";
   const ROW_CHOICES = ["auto", "off", "25", "50", "75", "100", "250", "500", "1000"];
@@ -2638,6 +2638,35 @@
     if (exit) { await sleep(200); exit.click(); }    // leave the order so it isn't kept open
     return det.slice(0, 200);
   }
+  // red banner "Error printing … [Details]": returns its Details button (and the banner element)
+  function errBanner() {
+    const btn = [...document.querySelectorAll("button, a, [role=button]")].find((b) => visible(b) && !b.closest("#shipcube-bot, #shipcube-so") && /^details$/i.test((b.innerText || b.textContent || "").trim()));
+    if (!btn) return null;
+    let p = btn;
+    for (let i = 0; i < 5 && p.parentElement; i++) {
+      p = p.parentElement;
+      if (/error|fail|unable|invalid/i.test(p.innerText || "") && (p.innerText || "").length < 400) return { btn, box: p };
+    }
+    return null;
+  }
+  function closeBanner(bn) {
+    const x = bn && ([...bn.box.querySelectorAll("button, [role=button], svg, [aria-label]")].reverse().find((e) => e !== bn.btn && !bn.btn.contains(e) && /close|dismiss/i.test((e.getAttribute("aria-label") || "") + (e.className && e.className.baseVal != null ? e.className.baseVal : e.className || "")))
+      || [...bn.box.querySelectorAll("button, [role=button]")].filter((e) => e !== bn.btn).pop());
+    if (x) { try { realClick(x.closest("button") || x); } catch {} }
+  }
+  // click Details, read the "Error details" box, close it
+  async function readErrorDetails(bn) {
+    realClick(bn.btn);
+    const dlg = await waitFor(() => [...document.querySelectorAll('[role=dialog], [role=alertdialog], .modal, [class*="modal" i]')].find((d) => visible(d) && !d.closest("#shipcube-bot, #shipcube-so") && /error details/i.test(d.innerText || "")), 5000, 150);
+    let det = "";
+    if (dlg) {
+      const lines = (dlg.innerText || "").split(/\n+/).map((x) => x.replace(/\s+/g, " ").trim()).filter((x) => x && !/^(error details|close|ok|cancel)$/i.test(x));
+      det = lines.join(" ").trim();
+      const cl = [...dlg.querySelectorAll("button, [role=button]")].find((b) => /^close$/i.test((b.innerText || "").trim()));
+      if (cl) { await sleep(150); realClick(cl); }
+    }
+    return (det || (bn.box.innerText || "").replace(/\s+/g, " ").replace(/\bdetails\b/i, "").trim() || "ShipHero error").slice(0, 200);
+  }
   function completeBtn() {
     return [...document.querySelectorAll("button, [role=button]")].find((b) => !b.closest("#shipcube-bot, #shipcube-so") && visible(b) && /^complete order$/i.test((b.innerText || "").replace(/\s+/g, " ").trim()));
   }
@@ -2829,10 +2858,12 @@
     soStage("complete", `row ${it.row} · completing…`);
     const before = location.href;
     const ERR = /error|fail|unable|could not|couldn't|invalid|required|select a station/i, OKT = /complet|shipped|success/i;
+    const bn0 = errBanner(); if (bn0) { closeBanner(bn0); await sleep(300); }       // an old red banner must not be mistaken for a new one
     const errBefore = popupText(ERR), okBefore = popupText(OKT), dlgBefore = openDialog();
     const leaf = [...btn.querySelectorAll("span, div")].find((x) => x.childElementCount === 0 && /complete order/i.test(x.textContent || "")) || btn;
     leaf.click();
     const out = await waitFor(() => {
+      if (errBanner()) return "banner:";
       const err = popupText(ERR);
       if (err && err !== errBefore) return "err:" + err;
       if (location.href !== before) return "nav";
@@ -2843,6 +2874,7 @@
       return null;
     }, 45000, 300);
     if (!out) return soDone({ ok: false, msg: "no confirmation after Complete order (45 s) — check this order" });
+    if (out === "banner:") { const bn = errBanner(); const det = bn ? await readErrorDetails(bn) : "ShipHero error"; return soDone({ ok: false, detail: det, msg: det }); }
     if (/bulk[\s_-]*ship/i.test(out)) return soDone({ ok: false, msg: "bulk ship" });
     if (out.startsWith("err:")) return soDone({ ok: false, msg: "ShipHero: " + out.slice(4) });
     if (out === "det:") { const det = await readDetailsModal(detailsModal()); return soDone({ ok: false, detail: det, msg: det }); }

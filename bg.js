@@ -337,7 +337,10 @@ function soTarget(c, openSheet) {
   if (so.manualCols && so.orderCol && so.statusCol) Object.assign(t, { orderCol: so.orderCol, statusCol: so.statusCol, idCol: so.idCol });
   return t;
 }
-async function soStart(fresh, openSheet, test, speed, check) {
+async function soStart(fresh, openSheet, test, speed, check, sig) {
+  if (fresh) {                                       // a new run: first let the old run's results reach the sheet (so they aren't redone)
+    for (let i = 0; i < 25; i++) { const o = await getSO(); if (!o || !o.writes || !o.writes.length || o.wstuck) break; await soFlush(); await new Promise((r) => setTimeout(r, 1000)); }
+  }
   const c = await getCfg(); const so = c.so;
   if (speed) c.speed = +speed;                     // exactly the speed shown in the panel
   const url = so.url || c.url, token = so.token || c.token;
@@ -373,7 +376,7 @@ async function soStart(fresh, openSheet, test, speed, check) {
   if (bad.length) log(`Rows ${bad.map((x) => x.row).join(", ")}: the Order Number shows as 5.78E+17 (lost digits) and there's no Order Id — skipped. Format that column as Plain text.`, "warn");
   if (!items.length) { log(`Nothing to do on "${r.sheet}"${skipped ? ` — ${skipped} row(s) already Completed` : ""}.`, "warn"); return; }
   s = { running: true, paused: false, items, pos: 0, retry: [], active: {}, idle: [], ok: 0, fail: 0, dryOk: 0, failed: [], writes: [], written: 0,
-        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: false, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [] };
+        conc: Math.max(1, Math.min(10, +c.speed || 4)), dry: false, sheet: r.sheet, target: tgt, errValue: so.errValue || "Error", client: soClient(c), startedAt: Date.now(), finishedAt: null, skipped, durations: [], sig: sig || "" };
   await setSO(s);
   log(`Single orders: ${items.length} order(s) on "${r.sheet}"${skipped ? `, ${skipped} already Completed skipped` : ""} — ${s.conc} tab${s.conc > 1 ? "s" : ""} at once${s.dry ? " · 🧪 TEST RUN (Complete order is NOT clicked, nothing written)" : ""}`, "ok");
   return soOpenWorkers();
@@ -600,7 +603,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (op === "soWriteNow") { sendResponse({ ok: true }); soFlush(true); return; }
     if (op === "soRetry") { sendResponse({ ok: true }); soRetryFailed(); return; }
-    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh, msg.openSheet || "", false, msg.speed, msg.check); return; }
+    if (op === "soStart") { sendResponse({ ok: true }); soStart(!!msg.fresh, msg.openSheet || "", false, msg.speed, msg.check, msg.sig); return; }
     if (op === "soPause") { await locked(async () => { const s = await getSO(); if (s) { s.paused = true; await setSO(s); } }); log("⏸ Paused — tabs finish the order they're on, then wait.", "warn"); sendResponse({ ok: true }); return; }
     if (op === "soSpeed") {                       // speed changed while running / paused: more tabs open now, fewer as tabs finish
       const n = Math.max(1, Math.min(10, +msg.speed || 4)); let go = false;
